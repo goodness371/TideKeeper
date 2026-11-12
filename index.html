@@ -1,0 +1,2416 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta charset="utf-8">
+<title>Tidekeeper</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&family=IM+Fell+English+SC&display=swap">
+<style>
+/* Layout: one full-bleed night sea; the HUD sits along the top edge like a keeper's logbook header, controls float at the bottom corners. */
+:root {
+  color-scheme: dark;
+  --ink: #0a1820;        /* deep night water */
+  --fog: #16262e;        /* fog bank */
+  --lamp: #ffcf7a;       /* lighthouse lamp */
+  --paper: #ece6d6;      /* logbook paper */
+  --muted: #8ea3a4;      /* sea-glass grey */
+  --wreck: #e2583e;      /* distress red */
+  --line: rgba(255, 207, 122, 0.28);
+  --font-display: "IM Fell English SC", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Barlow Semi Condensed", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.stage { position: fixed; inset: 0; background: var(--fog); }
+button { -webkit-tap-highlight-color: transparent; }
+#sea { -webkit-touch-callout: none; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+
+.hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-bottom: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 26px;
+  background: linear-gradient(to bottom, rgba(10, 24, 32, 0.85), rgba(10, 24, 32, 0));
+  pointer-events: none;
+}
+.hud-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.label {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+}
+.val { font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.val.small { font-size: 15px; font-weight: 500; }
+.tide-row { display: flex; align-items: center; gap: 8px; }
+.gauge {
+  width: 84px; height: 8px; border: 1px solid var(--line); border-radius: 1px;
+  position: relative; overflow: hidden;
+}
+.gauge i { position: absolute; left: 0; bottom: 0; top: 0; background: #5f98a3; width: 50%; }
+.pips { display: flex; gap: 5px; padding-block: 4px; }
+.pips b {
+  width: 18px; height: 10px; border: 1.5px solid var(--muted);
+  border-radius: 0 0 9px 9px;
+}
+.pips b.hit { background: var(--wreck); border-color: var(--wreck); }
+.pips b.mended { animation: mend 1.8s ease-out; }
+@keyframes mend {
+  0% { background: var(--lamp); border-color: var(--lamp); box-shadow: 0 0 14px var(--lamp); }
+  100% { background: transparent; box-shadow: none; }
+}
+.spacer { flex: 1; }
+.chips { display: flex; gap: 8px; }
+.hud .chip { background: rgba(10, 24, 32, 0.85); } /* beats the base .chip rule below */
+.chip[aria-pressed]::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 7px; vertical-align: 1px; background: var(--lamp); box-shadow: 0 0 6px var(--lamp);
+}
+.chip[aria-pressed="true"] { border-color: rgba(255, 207, 122, 0.6); }
+.chip.off { color: var(--paper); border: 1.5px dashed var(--wreck); background: rgba(40, 14, 10, 0.85); }
+.chip.off::before { background: transparent; box-shadow: none; border: 1.5px solid var(--wreck); }
+.chip {
+  pointer-events: auto; font: 500 13px var(--font-ui); letter-spacing: 0.06em;
+  color: var(--paper); background: transparent; border: 1px solid var(--line);
+  padding: 5px 10px; border-radius: 2px; cursor: pointer;
+}
+.chip:focus-visible, .primary:focus-visible, .focus:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+
+.readout {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  font-size: 13px; letter-spacing: 0.12em; color: var(--muted);
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.readout b { color: var(--lamp); font-weight: 600; }
+.focus {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  font: 600 14px var(--font-ui); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink); background: var(--lamp); border: 0; border-radius: 40px;
+  padding: 14px 20px; cursor: pointer; touch-action: none;
+  box-shadow: 0 0 24px rgba(255, 207, 122, 0.35);
+}
+.focus.on { background: #fff3d6; }
+.focus.horn { bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); background: #cfe3e0; box-shadow: 0 0 20px rgba(207, 227, 224, 0.3); }
+.focus.horn:disabled { background: #50615f; color: #c3cfcd; box-shadow: none; cursor: default; }
+.choices { display: flex; flex-direction: column; gap: 10px; }
+.choice {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 2px;
+  background: rgba(10, 24, 32, 0.85); color: var(--paper); font: 400 16px/1.4 var(--font-ui);
+}
+.choice b { font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 1.1; color: var(--lamp); }
+.choice small { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.choice:hover, .choice:focus-visible { border-color: var(--lamp); outline: none; background: rgba(40, 34, 20, 0.85); }
+
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  padding-block: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-bottom, 0px) + 16px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: radial-gradient(ellipse at center, rgba(10, 24, 32, 0.35), rgba(10, 24, 32, 0.8));
+  overflow-y: auto;
+}
+.card { max-width: 30rem; width: 100%; display: flex; flex-direction: column; gap: 14px; margin: auto; }
+.eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--lamp); }
+h1, h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 400; line-height: 0.95;
+  text-wrap: balance; color: var(--paper);
+  text-shadow: 0 0 40px rgba(255, 207, 122, 0.25);
+}
+h1 { font-size: clamp(56px, 14vw, 96px); }
+h2 { font-size: clamp(40px, 10vw, 64px); }
+.card p { margin: 0; font-size: 17px; line-height: 1.45; color: var(--paper); }
+.how {
+  margin: 0; padding: 12px 0; list-style: none; display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  font-size: 16px; line-height: 1.35; color: var(--muted);
+}
+.how b { color: var(--paper); font-weight: 600; }
+.how b.red { color: var(--wreck); }
+.primary {
+  align-self: flex-start; font: 600 16px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink); background: var(--lamp); border: 0; border-radius: 2px;
+  padding: 14px 26px; cursor: pointer;
+  box-shadow: 0 0 30px rgba(255, 207, 122, 0.3);
+}
+.primary:hover { background: #ffe0a3; }
+.overlay.scroll { background: rgba(10, 24, 32, 0.95); }
+.board { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.board h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 1.1; color: var(--lamp); }
+.boardHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.tabs { display: flex; gap: 6px; }
+.tab {
+  font: 500 13px var(--font-ui); letter-spacing: 0.06em; color: var(--paper); cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: 2px; padding: 5px 10px;
+}
+.tab[aria-pressed="true"] { background: var(--lamp); border-color: var(--lamp); color: var(--ink); }
+.tab:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+.board ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.board li {
+  display: grid; grid-template-columns: 2.2ch minmax(0, 1fr) auto auto; gap: 12px; align-items: baseline;
+  padding: 6px 0; border-top: 1px solid rgba(255, 207, 122, 0.12); font-size: 15px; font-variant-numeric: tabular-nums;
+}
+.board li:first-child { border-top: 0; }
+.board .rank { color: var(--muted); text-align: right; }
+.board .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .ships { font-weight: 600; }
+.board .nights { color: var(--muted); }
+.board li.me, .board li.me .ships { color: var(--lamp); }
+.card .board .note { font-size: 14px; line-height: 1.4; color: var(--muted); }
+.guide { max-width: 40rem; gap: 22px; padding-block: 8px 24px; }
+.guide section { display: flex; flex-direction: column; gap: 10px; }
+.guide h3 {
+  margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 1.1;
+  color: var(--lamp);
+}
+.guide p { font-size: 16px; color: var(--muted); }
+.guide p b { color: var(--paper); font-weight: 600; }
+.how.plain { border: 0; padding: 0; }
+.how.plain li { display: flex; gap: 10px; align-items: baseline; }
+.table-wrap { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.guide table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.35; }
+.guide th, .guide td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; }
+.guide tbody tr + tr th, .guide tbody tr + tr td { border-top: 1px solid rgba(255, 207, 122, 0.12); }
+.guide thead th { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.guide tbody th { color: var(--paper); font-weight: 600; white-space: nowrap; }
+.guide td { color: var(--muted); }
+.sw { flex: none; width: 10px; height: 10px; border-radius: 50%; transform: translateY(1px); }
+.sw.amber { background: #ffbe6e; box-shadow: 0 0 8px #ffbe6e; }
+.sw.red { background: var(--wreck); box-shadow: 0 0 8px var(--wreck); animation: flick 0.4s steps(2) infinite; }
+.sw.blink { background: #ffbe6e; animation: blink 3s infinite; }
+@keyframes flick { 50% { opacity: 0.25; } }
+@keyframes blink { 0%, 88% { opacity: 0.12; } 90%, 98% { opacity: 1; } }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ghost {
+  font: 600 16px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--paper); background: transparent; border: 1px solid var(--line); border-radius: 2px;
+  padding: 13px 22px; cursor: pointer;
+}
+.ghost:hover { border-color: var(--lamp); }
+.share-text {
+  width: 100%; box-sizing: border-box; resize: none; padding: 10px 12px;
+  font: 400 15px/1.4 var(--font-ui); color: var(--paper);
+  background: rgba(10, 24, 32, 0.9); border: 1px solid var(--lamp); border-radius: 2px;
+}
+.ghost.armed { color: var(--wreck); border-color: var(--wreck); }
+.ghost:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+.card .best { font-size: 14px; color: var(--muted); letter-spacing: 0.04em; }
+
+.toast {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 84px);
+  width: max-content; max-width: min(30rem, calc(100% - 32px));
+  padding: 9px 14px; font-size: 15px; line-height: 1.35; text-align: center;
+  color: var(--paper); background: rgba(10, 24, 32, 0.82); border: 1px solid var(--line); border-radius: 2px;
+  pointer-events: none; opacity: 0; transition: opacity 0.5s ease;
+}
+.toast.show { opacity: 1; }
+.banner {
+  position: absolute; left: 0; right: 0; top: 30%;
+  text-align: center; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.banner.show { opacity: 1; }
+.banner .b1 { font-family: var(--font-display); font-size: clamp(30px, 7vw, 48px); text-shadow: 0 0 30px rgba(10, 24, 32, 0.9); }
+.banner .b3 { margin: 10px auto 0; max-width: 28rem; font-size: 17px; line-height: 1.4; color: var(--paper); text-shadow: 0 0 18px rgba(10, 24, 32, 0.95); }
+.banner .b3:empty { display: none; }
+.banner .b2 { margin-top: 6px; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--lamp); }
+
+.coach {
+  /* tucked into the bottom-left corner, above the bearing readout, away from the middle of the sea.
+     Taps and the mouse pass straight through it to the sea; only its buttons catch them. */
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 44px);
+  width: min(21rem, calc(100% - 32px)); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px; background: rgba(10, 24, 32, 0.88);
+  border: 1px solid var(--lamp); border-radius: 2px;
+  box-shadow: 0 0 24px rgba(10, 24, 32, 0.7);
+  pointer-events: none; transition: opacity 0.25s ease;
+}
+.coach button { pointer-events: auto; }
+/* fades right back when the beam or a ship goes underneath it */
+.coach.under { opacity: 0.16; }
+.coach .eyebrow { font-size: 11px; }
+.coach h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 21px; line-height: 1.1; color: var(--lamp); }
+.coach p.say { margin: 0; font-size: 15px; line-height: 1.4; color: var(--paper); }
+.coach .row { gap: 8px; margin-top: 2px; }
+.coach .primary, .coach .ghost { font-size: 13px; padding: 7px 12px; }
+.coach .primary[hidden] { display: none; }
+@keyframes nudge { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 207, 122, 0.9); } 50% { box-shadow: 0 0 0 10px rgba(255, 207, 122, 0); } }
+.focus.nudge { animation: nudge 1.1s ease-in-out infinite; }
+.hud-group.nudge { outline: 1.5px solid var(--lamp); outline-offset: 5px; border-radius: 2px; }
+@media (max-width: 520px) {
+  .hud { gap: 8px 18px; }
+  .val { font-size: 19px; }
+  .gauge { width: 60px; }
+  .readout { bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); }
+  /* on a phone the guide sits low, between the lighthouse and the thumb controls, so ships
+     coming in from the top stay in view */
+  .coach { bottom: calc(env(safe-area-inset-bottom, 0px) + 104px); padding: 10px 12px; gap: 5px; }
+  .coach h3 { font-size: 19px; }
+  .coach p.say { font-size: 14px; }
+}
+@media (pointer: coarse) {
+  .focus { padding: 20px 28px; font-size: 15px; }
+  .focus.horn { bottom: calc(env(safe-area-inset-bottom, 0px) + 92px); }
+  .choice small { display: none; } /* the number-key hints are for keyboards */
+  .chip { padding: 9px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner { transition: none; }
+  .sw.red, .sw.blink, .pips b.mended, .focus.nudge { animation: none; }
+}
+</style>
+
+<div class="stage">
+  <canvas id="sea" aria-label="Night sea around the lighthouse. Aim the beam to guide ships."></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="hud-group"><span class="label" id="hNightLabel">Night</span><span class="val" id="hNight">1</span></div>
+    <div class="hud-group"><span class="label" id="hDockedLabel">Brought in</span><span class="val" id="hDocked">0 / 6</span></div>
+    <div class="hud-group" id="hTideGroup">
+      <span class="label">Tide</span>
+      <div class="tide-row"><div class="gauge"><i id="hTideFill"></i></div><span class="val small" id="hTide">3.4 m</span></div>
+    </div>
+    <div class="hud-group"><span class="label">Weather</span><span class="val small" id="hWeather">Calm</span></div>
+    <div class="hud-group"><span class="label" id="hWrecksLabel">Wrecks</span><span class="pips" id="hWrecks"><b></b><b></b><b></b></span></div>
+    <div class="spacer"></div>
+    <div class="chips">
+      <button id="pauseBtn" class="chip" type="button" title="Pause (P)">Pause</button>
+      <button id="musicBtn" class="chip" type="button" aria-pressed="true">Music: on</button>
+      <button id="mute" class="chip" type="button" aria-pressed="true">Sound: on</button>
+    </div>
+  </div>
+
+  <div class="readout" id="hBearing" hidden>BRG <b>000°</b> · WIDE</div>
+  <button id="focusBtn" class="focus" type="button" aria-pressed="false" hidden>Focus beam</button>
+  <button id="hornBtn" class="focus horn" type="button" hidden>Foghorn</button>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="coach" id="coach" hidden role="status" aria-live="polite">
+    <p class="eyebrow" id="coachStep">Guided night</p>
+    <h3 id="coachTitle"></h3>
+    <p class="say" id="coachText"></p>
+    <div class="row">
+      <button id="coachNext" class="primary" type="button" hidden>Next</button>
+      <button id="coachSkip" class="ghost" type="button">Skip to night 1</button>
+    </div>
+  </div>
+  <div class="banner" id="banner"><div class="b1" id="b1"></div><div class="b2" id="b2"></div><div class="b3" id="b3"></div></div>
+
+  <div class="overlay" id="titleScreen">
+    <div class="card">
+      <p class="eyebrow">Keeper's log · Skerry Light</p>
+      <h1>Tidekeeper</h1>
+      <p>Fog has rolled in over the skerries. Ships are making for your harbour, and they can only see the rocks while your beam is on them.</p>
+      <ul class="how">
+        <li><b>Aim the beam</b> at ships so they can see the rocks.</li>
+        <li><b>Watch the tide.</b> As it falls, hidden rocks break the surface.</li>
+        <li>A <b class="red">flickering red lantern</b> means a ship is about to hit something.</li>
+      </ul>
+      <p>Three wrecks and the harbour board takes your keys, though a good watch earns some back.</p>
+      <div class="row">
+        <button id="startBtn" class="primary" type="button">Light the lamp</button>
+        <button id="dailyBtn" class="ghost" type="button">Daily voyage</button>
+        <button id="helpBtn" class="ghost" type="button">How to play</button>
+      </div>
+      <p class="best" id="bestLine"></p>
+      <p class="best" id="dailyLine"></p>
+      <section class="board"><div class="boardHead"><h3>Harbour board</h3><div class="tabs" role="group" aria-label="Which board"><button type="button" class="tab" data-tab="all" aria-pressed="true">All time</button><button type="button" class="tab" data-tab="daily" aria-pressed="false">Today</button></div></div><div class="boardBody" aria-live="polite"></div></section>
+    </div>
+  </div>
+
+  <div class="overlay scroll" id="upgradeScreen" hidden>
+    <div class="card">
+      <p class="eyebrow">Dawn · the supply boat is in</p>
+      <h2>Choose an upgrade</h2>
+      <p>It stays with you for the rest of this watch.</p>
+      <div class="choices" id="choices"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="pauseScreen" hidden>
+    <div class="card">
+      <p class="eyebrow">Watch paused</p>
+      <h2>The sea waits</h2>
+      <p id="pauseStats"></p>
+      <div class="row">
+        <button id="resumeBtn" class="primary" type="button">Resume</button>
+        <button id="pauseHelpBtn" class="ghost" type="button">How to play</button>
+        <button id="quitBtn" class="ghost" type="button">Start over</button>
+        <button id="menuBtn" class="ghost" type="button">Main menu</button>
+      </div>
+      <p class="best">Press P or Esc to resume.</p>
+    </div>
+  </div>
+
+  <div class="overlay scroll" id="helpScreen" hidden role="dialog" aria-labelledby="helpTitle">
+    <div class="card guide">
+      <p class="eyebrow">Keeper's handbook</p>
+      <h2 id="helpTitle">How to play</h2>
+      <div class="row" id="guideRow">
+        <button id="guideBtn" class="ghost" type="button">Play the guided night</button>
+      </div>
+
+      <section>
+        <h3>Your job</h3>
+        <p>Ships are making for the harbour at the foot of your lighthouse. Each night a set number are due in. Bring them all in and you see the dawn, then the next night is busier. Three wrecks ends your watch.</p>
+      </section>
+
+      <section>
+        <h3>The beam</h3>
+        <p>In the fog, a ship can only see the rocks while your beam is on it, and for a second or so after. Out of the light it drifts off course and sails blind. You can always see ships' lanterns through the fog, so you know where to point.</p>
+        <p>The <b>wide beam</b> lights a broad area close to the island. The <b>focused beam</b> is narrow but reaches the edge of the sea.</p>
+      </section>
+
+      <section>
+        <h3>Controls</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>Computer</th><th>Phone</th></tr></thead>
+            <tbody>
+              <tr><th>Aim</th><td>Move the mouse, or ← → (A / D)</td><td>Drag left or right anywhere. Tap to point straight at a spot.</td></tr>
+              <tr><th>Focus</th><td>Press F or tap the Focus beam button to switch it on and off. You can also hold the mouse button or Space for a quick look.</td><td>Tap Focus beam to switch it on, and tap again to widen it. Resting a second finger also focuses it while you hold.</td></tr>
+              <tr><th>Pause</th><td>P or Esc, or the Pause button</td><td>The Pause button</td></tr>
+              <tr><th>Sound, music</th><td colspan="2"><b>Music</b> at the top right turns the background music on or off. <b>Sound</b> turns the sound effects on or off: the bells, crashes, thunder, wind and rain. Each one works on its own. Each button shows its current setting, and the game remembers your choice.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h3>Wrecks and second chances</h3>
+        <p>You can wreck three ships. The third ends your watch and you start again from night 1. The wreck markers at the top show how many you have left.</p>
+        <p>The harbour board can clear wrecks from your record at dawn:</p>
+        <ul class="how plain">
+          <li><b>Every third night</b> (nights 3, 6, 9 and on) clears one wreck.</li>
+          <li><b>A night with no wrecks</b>, from night 4 on, clears one wreck too.</li>
+        </ul>
+        <p>You never have more than three chances. If your record is already clean, you get a commendation instead, shown when your watch ends.</p>
+      </section>
+
+      <section>
+        <h3>Upgrades</h3>
+        <p>At each dawn the supply boat brings three upgrades and you choose one. It stays for the rest of your watch, and the game waits while you choose (press 1, 2 or 3 on a keyboard).</p>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th>Wider lens</th><td>The wide beam covers 10% more sea. Up to three times.</td></tr>
+              <tr><th>Brighter lamp</th><td>The wide beam reaches 8% farther. Up to three times.</td></tr>
+              <tr><th>Better charts</th><td>Ships remember the rocks 0.3 seconds longer. Up to three times.</td></tr>
+              <tr><th>Foghorn</th><td>Once a night (twice at level II), press H or tap Foghorn and every ship can see the rocks for 3 seconds.</td></tr>
+              <tr><th>Lifeboat crew</th><td>Your next wreck is rescued and does not count. You hold one at a time, and the boat brings at most three a watch.</td></tr>
+              <tr><th>Sweeping lamp</th><td>A second, dimmer lamp turns on its own and lights ships as it passes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h3>Daily voyage</h3>
+        <p>Each day brings one voyage that everyone sails: the same rocks, the same ships in the same order, and the same weather. The supply boat offers everyone the same upgrades too. Play it as often as you like; your best run of the day counts. A new voyage starts at midnight UTC. Rocks are fitted to your screen, so the layout only matches exactly on screens of the same shape.</p>
+      </section>
+
+      <section>
+        <h3>Harbour board</h3>
+        <p>The <b>Today</b> tab ranks the best runs on today's voyage. The harbour board on the title and game-over screens lists the ten best watches from everyone who plays this lighthouse. Your entry updates whenever you beat your own best. Adding a score needs you to be signed in to Claude with an account that can change this game's shared data; anyone else can still play, and their best is kept on their own device.</p>
+      </section>
+
+      <section>
+        <h3>The tide</h3>
+        <p>The tide gauge at the top rises and falls over about 45 seconds. When it falls, rocks break the surface and get bigger. Faint ripples in your beam mark rocks just under the water. They are safe for now but will surface as the tide drops. Most wrecks happen at low water.</p>
+      </section>
+
+      <section>
+        <h3>Reading the dark</h3>
+        <ul class="how plain">
+          <li><span class="sw amber"></span>A steady amber lantern is a ship sailing normally.</li>
+          <li><span class="sw red"></span>A <b class="red">flickering red lantern</b> means a ship in the dark is about to hit a rock. Get the beam on it fast.</li>
+          <li><span class="sw blink"></span>A lantern that only blinks now and then is a smuggler.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Ships</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Ship</th><th>From</th><th>How it handles</th></tr></thead>
+            <tbody>
+              <tr><th>Fishing smack</th><td>Night 1</td><td>The everyday boat. Average speed and turning.</td></tr>
+              <tr><th>Steamer</th><td>Night 2</td><td>Long and fast, turns wide. Light it early. Wind barely moves it.</td></tr>
+              <tr><th>Dinghy</th><td>Night 3</td><td>Small and slow, but loses its way quickly in the dark. Wind throws it about.</td></tr>
+              <tr><th>Smuggler</th><td>Night 4</td><td>Keeps its lantern shuttered and only blinks. Never shows the red warning.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h3>Weather</h3>
+        <p>Night 1 is always calm. From night 2, weather rolls in every minute or so and lasts about 20 seconds. A message at the top says what is coming.</p>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th>Squall</th><td>Strong wind pushes ships off course. Ships in your beam fight it better.</td></tr>
+              <tr><th>Fog bank</th><td>Your beam does not reach as far.</td></tr>
+              <tr><th>Thunderstorm</th><td>Wind and rain. Lightning lights the whole sea for a moment, so use it to spot rocks.</td></tr>
+              <tr><th>Moonlight</th><td>A break. The fog thins and ships hold their course better.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h3>Distress flares</h3>
+        <p>From night 2, a crew in trouble sometimes sends up a <b>red flare</b> out at sea, and a message says which way to look. Hold your beam on it for <b>2.5 seconds</b> before it burns out, about 12 seconds later. A green ring fills while your beam is on it, and a faint ring shows how long the flare has left.</p>
+        <p>A rescued crew counts as one ship brought in, for the night and for your score. Missing a flare costs nothing, but it takes your beam away from the ships, so choose your moment. Far-off flares need the focused beam.</p>
+      </section>
+
+      <section>
+        <h3>Tips</h3>
+        <ul class="how plain">
+          <li>Listen to the music. It grows tenser when the sea gets dangerous, and a drum joins in when things are getting bad.</li>
+          <li>Sweep instead of staring. A quick pass over a ship is enough to show it the rocks ahead.</li>
+          <li>Deal with red lanterns first. Everything else can wait a second.</li>
+          <li>Ships near the island are safe. Spend your light on the ones far out.</li>
+          <li>Keep an eye on the tide gauge. When it starts falling, the sea gets crowded with rocks.</li>
+        </ul>
+      </section>
+
+      <div class="row">
+        <button id="helpBack" class="primary" type="button">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overScreen" hidden>
+    <div class="card">
+      <p class="eyebrow">Entry closed</p>
+      <h2>The light goes dark</h2>
+      <p id="overStats"></p>
+      <div class="row">
+        <button id="restartBtn" class="primary" type="button">Light it again</button>
+        <button id="shareBtn" class="ghost" type="button">Share</button>
+        <button id="switchBtn" class="ghost" type="button">Daily voyage</button>
+        <button id="overMenuBtn" class="ghost" type="button">Main menu</button>
+      </div>
+      <p class="best" id="overBest"></p>
+      <p class="best" id="overBoard"></p>
+      <textarea id="shareText" class="share-text" readonly rows="4" hidden aria-label="Your result, ready to copy"></textarea>
+      <section class="board"><div class="boardHead"><h3>Harbour board</h3><div class="tabs" role="group" aria-label="Which board"><button type="button" class="tab" data-tab="all" aria-pressed="true">All time</button><button type="button" class="tab" data-tab="daily" aria-pressed="false">Today</button></div></div><div class="boardBody" aria-live="polite"></div></section>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+// When a new version loads into an open page, the old copy's audio and loops can keep running.
+// Each copy takes a generation number; older copies stop themselves, and their audio is closed.
+const GEN = (window.__tidekeeperGen = (window.__tidekeeperGen || 0) + 1);
+try { window.__tidekeeperAudio?.close(); window.__tidekeeperClip?.pause(); } catch (e) {}
+const current = () => window.__tidekeeperGen === GEN;
+const cv = $('sea'), ctx = cv.getContext('2d');
+const fogC = document.createElement('canvas'), fctx = fogC.getContext('2d');
+const FOG_SCALE = 0.5;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarse = matchMedia('(pointer: coarse)').matches;
+const TAU = Math.PI * 2;
+
+// Free play draws its layout randomness from Math.random. A daily voyage seeds three separate
+// streams from the UTC date (rocks, ships, weather), so everyone sailing that day meets the same
+// rocks, the same ships in the same order, and the same weather. Rocks are fitted to each screen,
+// so the exact layout matches only on screens of the same shape.
+function mulberry32(a) {
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const dayLabel = day => new Date(day + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+let RR = Math.random, RS = Math.random, RW = Math.random, RU = Math.random, RF = Math.random;
+function seedVoyage(day) {
+  if (!day) { RR = RS = RW = RU = RF = Math.random; return; }
+  RF = mulberry32(hashStr(day + ':flares'));
+  RU = mulberry32(hashStr(day + ':upgrades'));
+  RR = mulberry32(hashStr(day + ':rocks'));
+  RS = mulberry32(hashStr(day + ':ships'));
+  RW = mulberry32(hashStr(day + ':weather'));
+}
+
+const NAMES = ['Marigold', 'Kittiwake', 'Brendan', 'Sea Wren', 'Halcyon', 'Morwenna', 'Puffin', 'Good Intent',
+  'Ailsa', 'Curlew', 'Fair Isle', 'Saltire', 'Grace Darling', 'Tern', 'Selkie', 'Orkney Lass', 'Gannet',
+  'Persevere', 'Skua', 'Merrow', 'Lark', 'Providence', 'Eider', 'Shearwater'];
+
+// Each kind of ship handles differently. look = how far ahead (px at scale 1) a lit ship checks for rocks.
+const TYPES = {
+  smack:   { len: 24, speed: 1,    turn: 1.9, wander: 1,   mem: 1.3, look: 170, lantern: 1 },
+  steamer: { len: 40, speed: 1.3,  turn: 1.0, wander: 0.6, mem: 1.3, look: 260, lantern: 1.2 },
+  dinghy:  { len: 13, speed: 0.6,  turn: 2.6, wander: 2,   mem: 0.9, look: 110, lantern: 0.6 },
+  runner:  { len: 22, speed: 1.15, turn: 2.0, wander: 0.6, mem: 1.3, look: 170, lantern: 0.7, shutter: true }
+};
+const INTRO = {
+  2: 'Steamers join tonight. They are fast and turn wide, so light them early.',
+  3: 'Dinghies join tonight. They are small and slow, but lose their way quickly in the dark.',
+  4: 'Smugglers join tonight. They keep their lantern shuttered and only flash it now and then, so watch for the blink.'
+};
+function pickType(n) {
+  const w = [['smack', 1]];
+  if (n >= 2) w.push(['steamer', 0.35]);
+  if (n >= 3) w.push(['dinghy', 0.35]);
+  if (n >= 4) w.push(['runner', 0.2]);
+  let r = RS() * w.reduce((a, [, v]) => a + v, 0);
+  for (const [k, v] of w) if ((r -= v) <= 0) return k;
+  return 'smack';
+}
+
+let clock = 0; // seconds of unpaused time; banners and messages time out on this
+let W = 0, H = 0, dpr = 1, s = 1, cx = 0, cy = 0, maxD = 0, Ri = 0;
+
+const G = {
+  mode: 'title', night: 1, goal: 6, nightDocked: 0, docked: 0, wrecks: 0,
+  t: 0, tide: 0.82, between: 0, spawnT: 2, shake: 0,
+  ships: [], rocks: [], parts: [], floats: [], nameIdx: Math.random() * NAMES.length | 0,
+  wx: null
+};
+const beam = { a: -Math.PI / 2, target: -Math.PI / 2, ha: 0.32, r: 300, held: false };
+const keys = { left: false, right: false, space: false };
+let pointerFocus = false;
+
+const blobs = Array.from({ length: 9 }, () => ({
+  x: Math.random() * 1.3, y: Math.random(), r: 0.15 + Math.random() * 0.2, v: 0.004 + Math.random() * 0.008
+}));
+
+const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function resize() {
+  const ox = W, oy = H;
+  // never zero: a hidden or collapsed frame would otherwise break drawing and stop the game loop
+  W = Math.max(1, innerWidth); H = Math.max(1, innerHeight);
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  fogC.width = Math.ceil(W * FOG_SCALE); fogC.height = Math.ceil(H * FOG_SCALE);
+  s = Math.max(0.62, Math.min(W, H) / 800);
+  cx = W / 2; cy = H / 2 + 14 * s;
+  maxD = Math.hypot(W / 2, H / 2);
+  Ri = 56 * s;
+  if (ox && oy) {
+    const sx = W / ox, sy = H / oy;
+    for (const o of [...G.ships, ...G.parts, ...G.floats]) { o.x *= sx; o.y *= sy; }
+  }
+}
+
+/* ---------- world ---------- */
+function rockPos(k) { return [k.nx * W, k.ny * H]; }
+const rockUp = k => k.h > G.tide && G.t - (k.born ?? -99) >= 6;
+function rockExposedR(k) {
+  // exposed rocks grow as the water drops away from them
+  const e = clamp((k.h - G.tide) / 0.35, 0, 1);
+  return k.r * s * (0.55 + 0.45 * e);
+}
+
+function addRocks(n) {
+  let tries = 0;
+  while (n > 0 && tries++ < 800 && G.rocks.length < 30) {
+    const a = RR() * TAU;
+    const d = Ri * 2.5 + RR() * (maxD * 0.84 - Ri * 2.5);
+    const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+    const r = 12 + RR() * 16;
+    if (x < r * s + 20 || x > W - r * s - 20 || y < r * s + 80 || y > H - r * s - 20) continue;
+    let ok = true;
+    for (const k of G.rocks) {
+      const [kx, ky] = rockPos(k);
+      if (Math.hypot(kx - x, ky - y) < (k.r + r) * s + 46 * s) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const verts = [];
+    const m = 7 + (RR() * 4 | 0);
+    for (let i = 0; i < m; i++) verts.push(0.74 + RR() * 0.36);
+    // placement ignores the ships, so a daily voyage's rocks never depend on how it is being played;
+    // instead a new rock stays just under the water for its first 6 seconds (see rockUp)
+    G.rocks.push({ born: G.mode === 'title' ? -99 : G.t, nx: x / W, ny: y / H, r, h: 0.12 + RR() * 0.9, verts, rot: RR() * TAU, ph: RR() * TAU });
+    n--;
+  }
+}
+
+// the second lamp from the Sweeping lamp upgrade: narrow, shorter, turning on its own
+const beam2 = { a: Math.PI / 2, ha: 0.12, rk: 0.4 };
+function inCone(dx, dy, d, pad, a, ha, r) {
+  return d <= r + pad && Math.abs(angDiff(Math.atan2(dy, dx), a)) < ha + Math.atan2(pad, Math.max(d, 1));
+}
+function isLit(x, y, pad = 0) {
+  const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+  if (d < Ri * 2.4 + pad) return true;
+  if (inCone(dx, dy, d, pad, beam.a, beam.ha, beam.r)) return true;
+  return !!(G.up && G.up.sweep) && inCone(dx, dy, d, pad, beam2.a, beam2.ha, maxD * beam2.rk);
+}
+
+function nightParams(n) {
+  return { limit: Math.min(1 + Math.floor(n * 1.5), 12), interval: Math.max(1.4, 6 - n * 0.6) };
+}
+
+function spawnShip(a = RS() * TAU) {
+  const ux = Math.cos(a), uy = Math.sin(a), m = 30 * s;
+  // distance from the lighthouse to just past the screen edge in this direction
+  const d = Math.min(
+    ux > 1e-6 ? (W + m - cx) / ux : ux < -1e-6 ? (-m - cx) / ux : Infinity,
+    uy > 1e-6 ? (H + m - cy) / uy : uy < -1e-6 ? (-m - cy) / uy : Infinity);
+  const type = pickType(G.night), T = TYPES[type];
+  const name = NAMES[G.nameIdx++ % NAMES.length];
+  G.ships.push({ type,
+    x: cx + ux * d, y: cy + uy * d, hd: a + Math.PI,
+    off: (RS() - 0.5) * 1.2, bias: RS() < 0.5 ? -1 : 1, mem: 0,
+    sp: (22 + G.night * 3.2 + Math.max(0, G.night - 4) * 3 + RS() * 6) * s * T.speed, len: T.len * s,
+    name: type === 'steamer' ? `SS ${name}` : type === 'dinghy' ? `the ${name}'s dinghy` : type === 'runner' ? 'An unlit runner' : name,
+    warn: false, ph: RS() * TAU
+  });
+}
+
+function startNight(n) {
+  G.night = n;
+  G.goal = 4 + n * 2;
+  G.nightDocked = 0;
+  G.hornLeft = G.up.horn;
+  addRocks(n === 1 ? 9 : n > 5 ? 4 : 3);
+  G.spawnT = 1.2;
+  // the first flare of each night comes a little while in, never in the opening seconds
+  if (n >= 2) G.flareNext = Math.max(G.flareNext, G.t + 14 + RF() * 14);
+  if (n >= 2 && !tipSeen()) G.flareNext = G.t + 5.4;
+  const intro = n === 1 && coarse
+    ? 'Drag anywhere to turn the beam, or tap where you want it. Tap Focus beam for the long beam, and tap it again to widen it.'
+    : INTRO[n] || '';
+  showBanner(G.daily ? `Night ${n} · daily voyage` : `Night ${n}`, `${G.goal} ships due in`, intro ? 5000 : 2600, intro);
+}
+
+function newGame(daily = G.daily) {
+  G.daily = !!daily;
+  G.day = G.daily ? todayKey() : null;
+  endLesson(); closeTip(false);
+  seedVoyage(G.day);
+  G.nameIdx = RS() * NAMES.length | 0;
+  beam.held = false;
+  ensureAudio();
+  startMusic();
+  G.ships = []; G.parts = []; G.floats = []; G.rocks = [];
+  G.up = newUpgrades(); G.hornLeft = 0; G.offered = true; hornRing = -1;
+  choosing = false; $('upgradeScreen').hidden = true;
+  G.flare = null; G.rescued = 0; G.flareNext = 0; G.flareTipDone = false;
+  G.docked = 0; G.wrecks = 0; G.nightWrecks = 0; G.commend = 0; G.t = 0; G.tide = tideAt(0); G.shake = 0; G.wx = newWeather();
+  G.mode = 'play';
+  startNight(1);
+  setPaused(false);
+  $('titleScreen').hidden = true; $('overScreen').hidden = true;
+  $('hud').hidden = false; $('hBearing').hidden = false; $('focusBtn').hidden = false;
+  cv.focus?.();
+}
+
+let paused = false;
+function setPaused(on) {
+  if (on && !(G.mode === 'play' || G.mode === 'between')) return;
+  if (on && (choosing || tipOpen)) return; // the game already stands still while an upgrade is chosen or a tip is read
+  if (on === paused) return;
+  paused = on;
+  keys.left = keys.right = keys.space = false; pointerFocus = false; touches.clear();
+  if (on) {
+    const left = Math.max(0, G.goal - G.nightDocked);
+    $('pauseStats').textContent = G.mode === 'between'
+      ? `Night ${G.night} is kept. ${G.docked} ${G.docked === 1 ? 'ship' : 'ships'} brought in so far.`
+      : `Night ${G.night}. ${left} ${left === 1 ? 'ship' : 'ships'} still due in, ${G.wrecks} of 3 wrecks.`;
+    const ups = upgradeList();
+    if (ups.length) $('pauseStats').textContent += ` Upgrades: ${ups.join(', ')}.`;
+    if (G.rescued) $('pauseStats').textContent += ` Crews rescued: ${G.rescued}.`;
+  }
+  if (typeof disarmQuit === 'function') disarmQuit();
+  if (!on && helpFrom === 'pauseScreen') { $('helpScreen').hidden = true; helpFrom = null; }
+  $('pauseScreen').hidden = !on;
+  $('focusBtn').hidden = on;
+  $('pauseBtn').textContent = on ? 'Resume' : 'Pause';
+  setMusicLevel();
+  if (on) setTimeout(() => $('resumeBtn').focus(), 30);
+}
+
+let helpFrom = null;
+function openHelp(from) {
+  helpFrom = from;
+  $(from).hidden = true;
+  $('helpScreen').hidden = false;
+  $('helpScreen').scrollTop = 0;
+  // replaying the guide is offered from the title only; from the pause screen it would end the run
+  $('guideRow').hidden = from !== 'titleScreen';
+  setTimeout(() => $('helpBack').focus(), 30);
+}
+function closeHelp() {
+  if (!helpFrom) return;
+  $('helpScreen').hidden = true;
+  $(helpFrom).hidden = false;
+  const back = helpFrom === 'titleScreen' ? 'helpBtn' : 'pauseHelpBtn';
+  helpFrom = null;
+  setTimeout(() => $(back).focus(), 30);
+}
+
+function gameOver() {
+  G.mode = 'over';
+  G.flare = null;
+  musicMotif([69, 65, 62, 57], 0.5, 3); // a falling line as the light goes out
+  setTimeout(() => { if (G.mode === 'over') stopMusic(false); }, 1500);
+  if (G.wx) G.wx.flash = 0;
+  const best = loadBest();
+  const isBest = G.docked > best.docked;
+  if (isBest) saveBest({ docked: G.docked, night: G.night });
+  let dailyBest = false;
+  if (G.daily) {
+    const db0 = loadDaily();
+    dailyBest = !(db0.day === G.day && db0.docked >= G.docked);
+    if (dailyBest) saveDaily({ day: G.day, docked: G.docked, night: G.night });
+  }
+  const nights = G.night === 1 ? 'the first night' : `${G.night} nights`;
+  const praise = G.commend ? ` The harbour board commended you ${G.commend === 1 ? 'once' : `${G.commend} times`}.` : '';
+  const where = G.daily ? `On today's voyage you brought` : 'You brought';
+  $('overStats').textContent = `${where} ${G.docked} ${G.docked === 1 ? 'ship' : 'ships'} safely in over ${nights}.${praise}`;
+  $('overBest').textContent = isBest ? 'A new best for this lighthouse.'
+    : G.daily && dailyBest ? 'Your best on today\'s voyage so far.'
+    : (best.docked ? `Best watch: ${best.docked} ships, night ${best.night}.` : '');
+  const ups = upgradeList();
+  if (ups.length) $('overStats').textContent += ` Your lighthouse had: ${ups.join(', ')}.`;
+  if (G.rescued) $('overStats').textContent += ` That includes ${G.rescued} ${G.rescued === 1 ? 'crew' : 'crews'} rescued from distress flares.`;
+  if (G.up.boatsUsed) $('overStats').textContent += ` Lifeboats saved ${G.up.boatsUsed} ${G.up.boatsUsed === 1 ? 'crew' : 'crews'}.`;
+  $('restartBtn').textContent = G.daily ? 'Sail it again' : 'Light it again';
+  $('switchBtn').textContent = G.daily ? 'Free play' : 'Daily voyage';
+  $('overBoard').textContent = '';
+  $('shareText').hidden = true; $('shareBtn').textContent = 'Share'; clearTimeout(shareReset);
+  board.tab = G.daily ? 'daily' : 'all';
+  renderBoard();
+  postResults(G.docked, G.night, G.commend, G.daily ? G.day : null).then(msg => {
+    if (!current() || G.mode !== 'over') return;
+    $('overBoard').textContent = msg;
+  });
+  showDailyLine();
+  $('overScreen').hidden = false;
+  $('focusBtn').hidden = true;
+  setTimeout(() => $('restartBtn').focus(), 50);
+}
+
+
+// Share, on the game over screen: the phone's share sheet where the page is allowed to open it,
+// otherwise copied to the clipboard; if both are blocked, the text appears ready to copy by hand.
+const SHARE_URL = 'https://claude.ai/artifact/L7Wuq1qgkGKfufm3BuMvTj';
+function shareLine() {
+  const nights = G.night === 1 ? '1 night' : `${G.night} nights`;
+  const ships = G.docked - (G.rescued || 0);
+  const what = `${ships} ${ships === 1 ? 'ship' : 'ships'} brought safely in` + (G.rescued ? `, ${G.rescued} ${G.rescued === 1 ? 'crew' : 'crews'} rescued` : '');
+  return G.daily
+    ? `On today's Tidekeeper daily voyage (${dayLabel(G.day)}) I kept the light for ${nights}: ${what}. Same rocks, ships and weather for everyone today. Can you beat it?`
+    : `I kept the Skerry Light for ${nights} in Tidekeeper: ${what}. Can you beat it?`;
+}
+let shareReset = 0;
+function shareSaid(label) {
+  const b = $('shareBtn');
+  b.textContent = label;
+  clearTimeout(shareReset);
+  shareReset = setTimeout(() => { b.textContent = 'Share'; }, 2500);
+}
+async function shareResult() {
+  const text = shareLine(), all = `${text} ${SHARE_URL}`;
+  try {
+    if (navigator.share && coarse) { await navigator.share({ title: 'Tidekeeper', text, url: SHARE_URL }); shareSaid('Shared'); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; } // they closed the share sheet
+  try { await navigator.clipboard.writeText(all); shareSaid('Copied to clipboard'); return; } catch (e) {}
+  const ta = $('shareText');
+  ta.value = all; ta.hidden = false; ta.focus(); ta.select();
+  shareSaid('Copy the text below');
+}
+
+/* ---------- weather ---------- */
+// From night 2 a weather event arrives every 30-55 s and lasts 16-24 s, easing in and out over 3 s.
+const WEATHER = {
+  squall:  { name: 'Squall', from: 2, weight: 1, wind: 30,
+    say: d => `A squall is blowing from the ${d}. Ships in the dark will be pushed off course.` },
+  fogbank: { name: 'Fog bank', from: 2, weight: 1,
+    say: () => 'A fog bank is rolling in. Your beam will not reach as far.' },
+  storm:   { name: 'Thunderstorm', from: 3, weight: 0.9, wind: 18,
+    say: d => `A thunderstorm, wind from the ${d}. Lightning shows the rocks for a moment.` },
+  moon:    { name: 'Moonlight', from: 2, weight: 0.6,
+    say: () => 'The moon breaks through. The fog thins and ships hold their course better.' }
+};
+const COMPASS = ['east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'north', 'northeast'];
+function newWeather() { return { kind: 'calm', t: 0, dur: 0, next: 30 + RW() * 15, wa: 0, flash: 0, bolt: 3, inten: 0 }; }
+
+function startWeather() {
+  const pool = Object.entries(WEATHER).filter(([, w]) => G.night >= w.from);
+  let r = RW() * pool.reduce((a, [, w]) => a + w.weight, 0), kind = pool[0][0];
+  for (const [k, w] of pool) if ((r -= w.weight) <= 0) { kind = k; break; }
+  const wx = G.wx;
+  Object.assign(wx, { kind, t: 0, dur: 16 + RW() * 8, wa: RW() * TAU, bolt: 2 + RW() * 2 });
+  // wind blows toward wa, so it comes from the opposite side
+  const from = COMPASS[Math.round(((wx.wa + Math.PI) % TAU) / (TAU / 8)) % 8];
+  showToast(WEATHER[kind].say(from));
+}
+
+function updateWeather(dt) {
+  const wx = G.wx;
+  if (wx.flash > 0) wx.flash -= dt;
+  if (wx.kind === 'calm') {
+    wx.inten = 0;
+    if (G.night >= 2 && (wx.next -= dt) <= 0) startWeather();
+    return;
+  }
+  wx.t += dt;
+  wx.inten = clamp(Math.min(wx.t, wx.dur - wx.t) / 3, 0, 1);
+  if (wx.kind === 'storm' && (wx.bolt -= dt) <= 0 && wx.t < wx.dur - 2) {
+    wx.flash = 0.35; wx.bolt = 2.5 + RW() * 3.5; thunder();
+  }
+  if (wx.t >= wx.dur) {
+    wx.kind = 'calm'; wx.next = 30 + RW() * 25;
+    showToast('The weather clears.');
+  }
+}
+
+function windVec() {
+  const w = WEATHER[G.wx.kind];
+  if (!w || !w.wind) return [0, 0];
+  const m = w.wind * s * G.wx.inten;
+  return [Math.cos(G.wx.wa) * m, Math.sin(G.wx.wa) * m];
+}
+
+function tideAt(t) { return 0.52 + 0.30 * Math.sin(t * TAU / 46 + Math.PI / 2); }
+
+/* ---------- lighthouse upgrades ---------- */
+// At each dawn the supply boat offers three upgrades and the keeper takes one for the rest of the
+// watch. On a daily voyage the offers come from the day's seed, so everyone is offered the same.
+const UPGRADES = {
+  lens:   { name: 'Wider lens', max: 3, say: () => 'The wide beam covers 10% more sea.' },
+  lamp:   { name: 'Brighter lamp', max: 3, say: () => 'The wide beam reaches 8% farther.' },
+  charts: { name: 'Better charts', max: 3, say: () => 'Ships remember the rocks 0.3 seconds longer after your beam moves on.' },
+  horn:   { name: 'Foghorn', max: 2, say: lv => `${lv === 1 ? 'Once' : 'Twice'} a night, sound the horn and every ship can see the rocks for 3 seconds. Press H or tap Foghorn.` },
+  boat:   { name: 'Lifeboat crew', max: 1, say: () => 'The next wreck is rescued and does not count against you.' },
+  sweep:  { name: 'Sweeping lamp', max: 1, say: () => 'A second, dimmer lamp turns on its own and lights ships as it passes.' }
+};
+const ROMAN = ['', '', ' II', ' III'];
+const newUpgrades = () => ({ lens: 0, lamp: 0, charts: 0, horn: 0, boat: 0, sweep: 0, boatsUsed: 0, boatsTaken: 0 });
+let choosing = false, offers = [];
+
+function upgradeList() {
+  return Object.keys(UPGRADES).filter(k => G.up[k] > 0 && k !== 'boat')
+    .map(k => UPGRADES[k].name + (ROMAN[G.up[k]] || ''))
+    .concat(G.up.boat ? [`${G.up.boat} lifeboat${G.up.boat === 1 ? '' : 's'}`] : []);
+}
+
+function openUpgrades() {
+  // each upgrade stops once it reaches its limit; you hold one lifeboat at a time, three per watch
+  const pool = Object.keys(UPGRADES).filter(k => G.up[k] < UPGRADES[k].max && !(k === 'boat' && G.up.boatsTaken >= 3));
+  offers = [];
+  while (offers.length < 3 && pool.length) offers.push(pool.splice(RU() * pool.length | 0, 1)[0]);
+  if (!offers.length) return false;
+  const box = $('choices');
+  box.textContent = '';
+  offers.forEach((k, i) => {
+    const u = UPGRADES[k], lv = k === 'boat' ? 1 : G.up[k] + 1;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'choice';
+    const name = document.createElement('b'); name.textContent = u.name + (k === 'boat' ? '' : ROMAN[lv] || '');
+    const say = document.createElement('span'); say.textContent = u.say(lv);
+    const key = document.createElement('small'); key.textContent = `Press ${i + 1}`;
+    b.append(name, say, key);
+    b.addEventListener('click', () => chooseUpgrade(i));
+    box.appendChild(b);
+  });
+  choosing = true;
+  $('upgradeScreen').hidden = false;
+  $('focusBtn').hidden = true; $('hornBtn').hidden = true;
+  setTimeout(() => box.firstChild && box.firstChild.focus(), 30);
+  return true;
+}
+
+function chooseUpgrade(i) {
+  if (!choosing || !offers[i]) return;
+  const k = offers[i];
+  G.up[k]++;
+  if (k === 'boat') G.up.boatsTaken++;
+  choosing = false;
+  $('upgradeScreen').hidden = true;
+  $('focusBtn').hidden = false;
+  if (k === 'horn') G.hornLeft = G.up.horn;
+  showToast(`${UPGRADES[k].name} fitted.`);
+}
+
+let hornRing = -1;
+function soundHorn() {
+  if (!(G.mode === 'play' || G.mode === 'between') || paused || choosing || G.hornLeft <= 0) return;
+  G.hornLeft--;
+  for (const sh of G.ships) sh.mem = Math.max(sh.mem, 3);
+  hornRing = 0;
+  hornSound();
+}
+
+
+/* ---------- guided first night ---------- */
+// A calm, forgiving night that teaches one thing at a time. No weather, no random ships, wrecks
+// don't count and nothing goes on the harbour board. Steps either wait for the player to do the
+// thing, or (for explanations) wait for Next.
+const lesson = { step: -1, acc: 0, lastA: 0, t: 0, lit: 0, docked: 0, respawn: 0 };
+const tapOr = (touch, keys) => coarse ? touch : keys;
+const LESSON = [
+  { title: 'Turn the beam',
+    say: () => tapOr('Drag anywhere to swing the beam round, or tap where you want it to point.',
+      'Move the mouse to point the beam, or use the arrow keys. Sweep it all the way round.'),
+    enter() { lesson.acc = 0; lesson.lastA = beam.a; },
+    done: () => lesson.acc > 2.6 },
+  { title: 'Light a ship',
+    say: () => 'A ship is coming in, marked with a ring. Turn the beam onto it: while it is lit, its crew can see the rocks.',
+    enter() { lesson.lit = 0; lesson.docked = 0; lessonShip(beam.a + Math.PI * 0.8, true); },
+    done: () => lesson.lit > 1.2 || lesson.docked > 0 },
+  { title: 'Bring it home',
+    say: () => 'Keep it lit until it reaches the lighthouse. In the dark it soon forgets the rocks and drifts. A flickering red lantern means it is about to hit one.',
+    done: () => lesson.docked > 0 },
+  { title: 'Focus the beam',
+    say: () => tapOr('Tap Focus beam, bottom right. The beam narrows but reaches the edge of the sea.',
+      'Press F or click Focus beam, bottom right. The beam narrows but reaches the edge of the sea.'),
+    enter() { lesson.t = 0; $('focusBtn').classList.add('nudge'); },
+    tick(dt) { lesson.t = beam.held ? lesson.t + dt : 0; },
+    done: () => lesson.t > 0.6,
+    leave() { $('focusBtn').classList.remove('nudge'); } },
+  { title: 'Widen it again',
+    say: () => tapOr('Tap Widen beam to go back. Wide for ships close in, focused for ships far out.',
+      'Press F again to widen it. Wide for ships close in, focused for ships far out.'),
+    enter() { lesson.t = 0; $('focusBtn').classList.add('nudge'); },
+    tick(dt) { lesson.t = !beam.held && !beam.focused ? lesson.t + dt : 0; },
+    done: () => lesson.t > 0.3,
+    leave() { $('focusBtn').classList.remove('nudge'); } },
+  { title: 'Watch the tide', next: 'Next',
+    say: () => 'The tide gauge is at the top. As the tide falls, hidden rocks break the surface, so low tide is the most dangerous time.',
+    enter() { $('hTideGroup').classList.add('nudge'); },
+    leave() { $('hTideGroup').classList.remove('nudge'); } },
+  { title: 'Two at once',
+    say: () => 'Two ships from different sides. Swing between them: a ship remembers the rocks for a moment after the beam moves on.',
+    enter() {
+      lesson.docked = 0;
+      lessonShip(beam.a + Math.PI * 0.55, false);
+      lessonShip(beam.a - Math.PI * 0.6, false);
+    },
+    done: () => lesson.docked >= 2 },
+  { title: 'Wrecks and chances', next: 'Next',
+    say: () => `On a real night each wreck uses one of your three chances, and a good watch earns some back. ${tapOr('Tap Pause', 'Press P')} for a break. How to play covers the rest.` },
+  { title: 'You are ready', next: () => lesson.daily ? 'Start the daily voyage' : 'Start night 1',
+    say: () => `That is the whole job. ${lesson.daily ? "Today's voyage begins" : 'Night 1 begins'} with 6 ships, and each night after brings more. Good luck, keeper.` }
+];
+
+// A newcomer (never finished or skipped the guide, no best watch yet) is guided through a first
+// night before their first real game, whichever mode they picked; afterwards it goes straight there.
+function isNewcomer() {
+  try { return localStorage.getItem('tidekeeper-taught') !== '1' && !(loadBest().docked > 0); } catch (e) { return false; }
+}
+function play(daily) { if (isNewcomer()) startLesson(daily); else newGame(daily); }
+function startLesson(daily = false) {
+  lesson.daily = !!daily;
+  newGame(false);
+  G.lesson = true;
+  G.goal = 3;
+  bannerUntil = 0; $('banner').classList.remove('show');
+  // fresh rocks, all showing from the start, with a clear patch where the first ship comes in
+  G.rocks = [];
+  addRocks(6);
+  for (const k of G.rocks) k.born = -99;
+  $('hDockedLabel').textContent = 'Lesson ships';
+  $('coach').hidden = false;
+  lessonGo(0);
+}
+function endLesson() {
+  if (!G.lesson) return;
+  G.lesson = false;
+  if (lesson.step >= 0) LESSON[lesson.step]?.leave?.();
+  lesson.step = -1;
+  $('coach').hidden = true; $('coach').classList.remove('under');
+  $('hDockedLabel').textContent = 'Brought in';
+}
+function finishLesson() {
+  try { localStorage.setItem('tidekeeper-taught', '1'); } catch (e) {}
+  newGame(lesson.daily);
+}
+function lessonGo(i) {
+  if (lesson.step >= 0) LESSON[lesson.step]?.leave?.();
+  lesson.step = i;
+  const st = LESSON[i];
+  $('coachStep').textContent = `Guided night · ${i + 1} of ${LESSON.length}`;
+  $('coachTitle').textContent = st.title;
+  $('coachText').textContent = st.say();
+  $('coachNext').hidden = !st.next;
+  if (st.next) $('coachNext').textContent = typeof st.next === 'function' ? st.next() : st.next;
+  $('coachSkip').hidden = i === LESSON.length - 1;
+  $('coachSkip').textContent = lesson.daily ? 'Skip to the voyage' : 'Skip to night 1';
+  st.enter?.();
+  if (i > 0) bell();
+}
+// A ship from a given direction. The first one has a rock right on its way in, so the light matters.
+function lessonShip(a, withRock) {
+  spawnShip(a);
+  const sh = G.ships[G.ships.length - 1];
+  sh.lesson = true; sh.type = 'smack'; sh.len = TYPES.smack.len * s; sh.off = 0;
+  sh.sp = 24 * s;
+  if (withRock) {
+    const d = Math.hypot(sh.x - cx, sh.y - cy) * 0.55;
+    const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d, r = 20;
+    G.rocks = G.rocks.filter(k => { const [kx, ky] = rockPos(k); return Math.hypot(kx - x, ky - y) > (k.r + r) * s + 60 * s; });
+    const verts = Array.from({ length: 9 }, () => 0.74 + Math.random() * 0.36);
+    G.rocks.push({ born: -99, nx: x / W, ny: y / H, r, h: 1.2, verts, rot: Math.random() * TAU, ph: Math.random() * TAU });
+  }
+}
+function lessonWreck() {
+  // said in the guide box itself, so nothing else covers it
+  $('coachText').textContent = 'That one hit a rock. Here it costs nothing; on a real night it costs a chance. Another ship is coming.';
+  lesson.respawn = 2.2;
+}
+// is the beam, or any ship, underneath the guide box? sampled along the beam's centre line
+function coachCovering() {
+  const r = $('coach').getBoundingClientRect(), pad = 14 * s;
+  const inside = (x, y) => x > r.left - pad && x < r.right + pad && y > r.top - pad && y < r.bottom + pad;
+  for (const sh of G.ships) if (inside(sh.x, sh.y)) return true;
+  for (let d = Ri; d <= beam.r; d += 18 * s) if (inside(cx + Math.cos(beam.a) * d, cy + Math.sin(beam.a) * d)) return true;
+  return false;
+}
+function lessonUpdate(dt) {
+  if (lesson.step < 0) return;
+  if ((lesson.fadeT = (lesson.fadeT || 0) - dt) <= 0) { lesson.fadeT = 0.1; $('coach').classList.toggle('under', coachCovering()); }
+  lesson.acc += Math.abs(angDiff(beam.a, lesson.lastA)); lesson.lastA = beam.a;
+  for (const sh of G.ships) if (sh.lesson && isLit(sh.x, sh.y, sh.len * 0.4) && Math.hypot(sh.x - cx, sh.y - cy) > Ri * 2.4) lesson.lit += dt;
+  if (lesson.respawn > 0 && (lesson.respawn -= dt) <= 0) {
+    if (lesson.step <= 2) lessonGo(1);
+    else if (lesson.step === 6) $('coachText').textContent = LESSON[6].say(), lessonShip(beam.a + Math.PI * (0.5 + Math.random() * 0.5) * (Math.random() < 0.5 ? -1 : 1), false);
+  }
+  const st = LESSON[lesson.step];
+  st.tick?.(dt);
+  if (lesson.respawn <= 0 && st.done?.()) lessonGo(lesson.step + 1);
+}
+// a pulsing ring round each lesson ship, kept on screen while the ship is still out past the edge
+function drawLessonMarks(t) {
+  if (lesson.step !== 1 && lesson.step !== 2 && lesson.step !== 6) return;
+  const m = 26 * s, pulse = reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t * 5);
+  ctx.save();
+  ctx.lineWidth = 2 * s;
+  for (const sh of G.ships) {
+    if (!sh.lesson) continue;
+    const x = clamp(sh.x, m, W - m), y = clamp(sh.y, m + 60, H - m);
+    ctx.strokeStyle = `rgba(255, 207, 122, ${0.5 + 0.4 * pulse})`;
+    ctx.beginPath(); ctx.arc(x, y, sh.len * 0.9 + 6 * s + pulse * 5 * s, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+
+/* ---------- distress flares ---------- */
+// From night 2, a crew in trouble sends up a flare every 35-65 seconds somewhere out at sea.
+// Hold any beam on it for 2.5 seconds in all before it burns out (12 seconds) and the crew is
+// rescued: it counts as one ship brought in, for the night and for your score. Missing one costs
+// nothing but the chance. A daily voyage draws its flares from their own seeded stream.
+const FLARE_LIFE = 12, FLARE_HOLD = 2.5;
+function spawnFlare() {
+  for (let tries = 0; tries < 40; tries++) {
+    const a = RF() * TAU, d = maxD * (0.32 + RF() * 0.45);
+    const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+    if (x < 40 * s || x > W - 40 * s || y < 110 || y > H - 50 * s) continue;
+    if (G.rocks.some(k => { const [kx, ky] = rockPos(k); return Math.hypot(kx - x, ky - y) < (k.r + 22) * s; })) continue;
+    const first = !tipSeen();
+    if (first && coachHit(x, y)) continue; // keep the very first flare clear of the tip box
+    G.flare = { nx: x / W, ny: y / H, life: FLARE_LIFE, hold: 0, ph: 0 };
+    const from = COMPASS[Math.round(((a + TAU) % TAU) / (TAU / 8)) % 8];
+    flareSound();
+    if (first) openTip(from);
+    else showToast(`A distress flare to the ${from}! Hold your beam on it to save the crew.`);
+    return;
+  }
+}
+
+// The first flare of every watch stops the game with a short explanation in the guide box,
+// right after night 2's opening banner. Play carries on (flare and all) once they tap Got it.
+let tipOpen = false;
+const tipSeen = () => !!G.flareTipDone;
+function coachHit(x, y) {
+  // where the guide box sits, worked out from the screen size (it is hidden at this point)
+  const narrow = innerWidth <= 520, w = Math.min(336, W - 32), h = narrow ? 210 : 190;
+  const bottom = H - (narrow ? 104 : 44);
+  return x > 16 - 30 && x < 16 + w + 30 && y > bottom - h - 30 && y < bottom + 30;
+}
+function openTip(from) {
+  tipOpen = true;
+  keys.left = keys.right = keys.space = false; pointerFocus = false; touches.clear();
+  $('coachStep').textContent = 'New tonight';
+  $('coachTitle').textContent = 'Distress flares';
+  $('coachText').textContent = `A crew in trouble has sent up a red flare to the ${from}. Hold your beam on it for 2.5 seconds before it burns out to rescue them. The green ring fills while your beam is on it, and the faint ring shows the time left. A rescue counts as a ship brought in; missing one costs nothing.`;
+  $('coachNext').textContent = 'Got it'; $('coachNext').hidden = false;
+  $('coachSkip').hidden = true;
+  $('coach').classList.remove('under');
+  $('coach').hidden = false;
+  $('focusBtn').hidden = true;
+  setTimeout(() => $('coachNext').focus(), 30);
+}
+function closeTip(remember = true) {
+  if (!tipOpen) return;
+  tipOpen = false;
+  if (remember) G.flareTipDone = true;
+  if (!G.lesson) $('coach').hidden = true;
+  if (G.mode === 'play' || G.mode === 'between') $('focusBtn').hidden = false;
+  cv.focus?.();
+}
+function updateFlare(dt) {
+  if (G.night < 2) return;
+  const f = G.flare;
+  if (!f) {
+    if (G.flareNext && G.t >= G.flareNext) { G.flareNext = 0; spawnFlare(); if (!G.flare) G.flareNext = G.t + 10; }
+    return;
+  }
+  f.life -= dt; f.ph += dt;
+  const x = f.nx * W, y = f.ny * H;
+  if (isLit(x, y, 6 * s)) f.hold += dt;
+  if (f.hold >= FLARE_HOLD) {
+    G.flare = null; G.flareNext = G.t + 35 + RF() * 30;
+    G.rescued++; G.docked++; G.nightDocked++;
+    G.floats.push({ x, y: y - 18 * s, text: 'Crew rescued', color: '#9fd3c7', life: 2.4, max: 2.4 });
+    bell(); setTimeout(bell, 220);
+    checkDawn();
+  } else if (f.life <= 0) {
+    G.flare = null; G.flareNext = G.t + 35 + RF() * 30;
+    G.floats.push({ x, y: y - 18 * s, text: 'The flare burned out', color: '#8ea3a4', life: 2.4, max: 2.4 });
+  }
+}
+// drawn over the fog: a red glow at sea, a spark drifting up from it, and a ring that fills
+// as the beam holds on it, with a fainter ring showing how long the flare has left
+function drawFlare(t) {
+  const f = G.flare;
+  if (!f) return;
+  const x = f.nx * W, y = f.ny * H, fade = Math.min(1, f.life / 2);
+  const flick = reduceMotion ? 0.85 : 0.7 + 0.3 * Math.sin(t * 13) * Math.sin(t * 7.3);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const r = 70 * s;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(255, 150, 170, ${flick * fade})`); g.addColorStop(0.15, `rgba(255, 80, 120, ${0.7 * flick * fade})`);
+  g.addColorStop(0.5, `rgba(255, 60, 100, ${0.18 * flick * fade})`); g.addColorStop(1, 'rgba(255, 60, 100, 0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  // a beacon ring that keeps spreading outwards, so the eye finds the flare at once
+  if (!reduceMotion) {
+    const k = (f.ph * 0.8) % 1;
+    ctx.strokeStyle = `rgba(255, 110, 140, ${0.5 * (1 - k) * fade})`; ctx.lineWidth = 2 * s;
+    ctx.beginPath(); ctx.arc(x, y, 18 * s + k * 50 * s, 0, TAU); ctx.stroke();
+  }
+  if (!reduceMotion) {
+    const k = (f.ph * 0.6) % 1, sy = y - k * 70 * s;
+    ctx.fillStyle = `rgba(255, 180, 190, ${(1 - k) * fade})`;
+    ctx.beginPath(); ctx.arc(x + Math.sin(f.ph * 2) * 4 * s, sy, 2.6 * s, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+  ctx.fillStyle = `rgba(255, 235, 238, ${fade})`;
+  ctx.beginPath(); ctx.arc(x, y, 3.2 * s, 0, TAU); ctx.fill();
+  const rr = 17 * s;
+  ctx.lineWidth = 2 * s;
+  ctx.strokeStyle = 'rgba(236, 230, 214, 0.25)';
+  ctx.beginPath(); ctx.arc(x, y, rr + 5 * s, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(f.life / FLARE_LIFE, 0, 1)); ctx.stroke();
+  ctx.lineWidth = 3 * s;
+  ctx.strokeStyle = 'rgba(159, 211, 199, 0.95)';
+  ctx.beginPath(); ctx.arc(x, y, rr, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(f.hold / FLARE_HOLD, 0, 1)); ctx.stroke();
+}
+
+/* ---------- ships ---------- */
+function updateShip(sh, dt) {
+  const T = TYPES[sh.type];
+  if (isLit(sh.x, sh.y, sh.len * 0.4)) sh.mem = Math.max(sh.mem, T.mem + 0.3 * G.up.charts); else sh.mem -= dt;
+  const guided = sh.mem > 0;
+  const toC = Math.atan2(cy - sh.y, cx - sh.x);
+  const dC = Math.hypot(cx - sh.x, cy - sh.y);
+
+  if (guided) sh.off *= Math.exp(-dt * 2.2);
+  else {
+    const steady = G.wx.kind === 'moon' ? 1 - 0.55 * G.wx.inten : 1;
+    sh.off += (sh.bias * 0.5 + (Math.random() - 0.5) * 2.4) * dt * T.wander * steady;
+    if (Math.random() < dt * 0.15) sh.bias *= -1;
+  }
+  if (dC > maxD - 10 * s) sh.off *= Math.exp(-dt * 1.5);
+  sh.off = clamp(sh.off, -1.25, 1.25);
+
+  let vx = Math.cos(toC + sh.off), vy = Math.sin(toC + sh.off);
+  const hx = Math.cos(sh.hd), hy = Math.sin(sh.hd);
+  // wind pushes every ship; lit ones fight it, steamers shrug it off, dinghies get thrown about
+  const [wxv, wyv] = windVec(), push = (guided ? 0.35 : 1) * (sh.type === 'steamer' ? 0.5 : sh.type === 'dinghy' ? 1.4 : 1);
+  const mvx = hx * sh.sp + wxv * push, mvy = hy * sh.sp + wyv * push;
+  const mlen = Math.hypot(mvx, mvy) || 1, mx = mvx / mlen, my = mvy / mlen;
+  sh.warn = false;
+
+  for (const k of G.rocks) {
+    const [kx, ky] = rockPos(k);
+    const rx = kx - sh.x, ry = ky - sh.y;
+    const d = Math.hypot(rx, ry) || 1;
+    const along = rx * hx + ry * hy;
+    const cross = -hy * rx + hx * ry; // rock's offset along the ship's left normal
+    const exposed = rockUp(k);
+    const kr = exposed ? rockExposedR(k) : k.r * s;
+    const clear = kr + sh.len * 0.35 + 12 * s;
+
+    const mAlong = rx * mx + ry * my, mCross = -my * rx + mx * ry;
+    if (exposed && mAlong > 0 && mAlong < T.look * 0.9 * s && Math.abs(mCross) < clear) sh.warn = true;
+
+    if (guided && k.h > G.tide - 0.05) {
+      if (along > 0 && along < T.look * s && Math.abs(cross) < clear + 12 * s) {
+        const side = Math.abs(cross) < 2 ? sh.bias : -Math.sign(cross);
+        const w = (1 - along / (T.look * s)) * 2.6;
+        vx += -hy * side * w; vy += hx * side * w;
+      }
+      const D = k.r * s + 42 * s;
+      if (d < D) { const w = (1 - d / D) * 3; vx -= rx / d * w; vy -= ry / d * w; }
+    }
+
+    if (exposed && d < rockExposedR(k) * 0.92 + sh.len * 0.28) return 'wreck';
+  }
+
+  const desired = Math.atan2(vy, vx);
+  const rate = guided ? T.turn : T.turn * 0.47;
+  sh.hd += clamp(angDiff(desired, sh.hd), -rate * dt, rate * dt);
+  sh.x += (Math.cos(sh.hd) * sh.sp + wxv * push) * dt;
+  sh.y += (Math.sin(sh.hd) * sh.sp + wyv * push) * dt;
+  if (dC < Ri + sh.len * 0.2) return 'dock';
+  return null;
+}
+
+function wreck(sh) {
+  if (G.up.boat > 0) {
+    // a lifeboat crew pulls the sailors out; the ship is lost but the wreck does not count
+    G.up.boat--; G.up.boatsUsed++;
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * TAU, v = (15 + Math.random() * 30) * s;
+      G.parts.push({ x: sh.x, y: sh.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.5 + Math.random(), max: 2.5,
+        rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 4, w: (3 + Math.random() * 4) * s, plank: true });
+    }
+    G.floats.push({ x: sh.x, y: sh.y - 18 * s, text: cap(`The lifeboat saved the crew of ${sh.name}`), color: '#9fd3c7', life: 2.8, max: 2.8 });
+    bell();
+    return;
+  }
+  if (!G.lesson) { G.wrecks++; G.nightWrecks++; }
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * TAU, v = (20 + Math.random() * 60) * s;
+    G.parts.push({ x: sh.x, y: sh.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 2 + Math.random() * 1.5, max: 3.5,
+      rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 6, w: (3 + Math.random() * 6) * s, plank: i % 3 !== 0 });
+  }
+  G.floats.push({ x: sh.x, y: sh.y - 18 * s, text: cap(`${sh.name} ran aground`), color: '#e2583e', life: 2.6, max: 2.6 });
+  G.shake = reduceMotion ? 0 : 0.45;
+  try { navigator.vibrate?.(140); } catch (e) {}
+  crashSound();
+  if (G.lesson) lessonWreck();
+  else if (G.wrecks >= 3) gameOver();
+}
+
+// Every 3rd night clears a wreck from the record, and so does any night after night 3 with no wrecks.
+// The record never holds more than 3 chances; a reward with nothing to clear becomes a commendation.
+function dawnReward() {
+  const n = G.night;
+  let earned = 0;
+  const why = [];
+  if (n % 3 === 0) { earned++; why.push(`keeping the light for ${n} nights`); }
+  if (n > 3 && G.nightWrecks === 0) { earned++; why.push('a night with no wrecks'); }
+  G.nightWrecks = 0;
+  if (!earned) return '';
+  const cleared = Math.min(earned, G.wrecks), spare = earned - cleared;
+  G.wrecks -= cleared;
+  G.commend += spare;
+  const reason = why.join(' and ');
+  setTimeout(() => { bell(); setTimeout(bell, 260); }, 700);
+  if (cleared && spare) return `For ${reason}, the harbour board clears a wreck from your record and commends your watch.`;
+  if (cleared) return `For ${reason}, the harbour board clears ${cleared === 1 ? 'a wreck' : '2 wrecks'} from your record.`;
+  return `For ${reason}, the harbour board commends your watch. Your record is already clean.`;
+}
+
+function dock(sh) {
+  G.docked++; G.nightDocked++;
+  G.floats.push({ x: sh.x, y: sh.y - 18 * s, text: cap(`${sh.name} is in`), color: '#ffcf7a', life: 2, max: 2 });
+  bell();
+  if (G.lesson) { lesson.docked++; return; }
+  checkDawn();
+}
+function checkDawn() {
+  if (G.mode === 'play' && G.nightDocked >= G.goal) {
+    if (G.flare) { G.flare = null; G.flareNext = 0; }
+    G.mode = 'between'; G.between = 5; G.offered = false;
+    musicMotif([62, 66, 69, 74], 0.22, 2.4); // dawn: a brighter D major lift
+    showBanner(`Dawn. Night ${G.night} kept`, `${G.docked} ${G.docked === 1 ? 'ship' : 'ships'} brought in so far`, 4600, dawnReward());
+  }
+}
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (keys.left) beam.target -= 2.4 * dt;
+  if (keys.right) beam.target += 2.4 * dt;
+  if (G.mode === 'title' || G.mode === 'over') beam.target += 0.32 * dt;
+  const d = angDiff(beam.target, beam.a);
+  beam.a += Math.sign(d) * Math.min(Math.abs(d), 5 * dt);
+  beam.target = beam.a + angDiff(beam.target, beam.a);
+  const foc = (beam.held || keys.space || pointerFocus) && G.mode !== 'title';
+  const up = G.up || newUpgrades();
+  const tHa = foc ? 0.12 : 0.32 * (1 + 0.1 * up.lens);
+  const tR = (foc ? maxD * 1.02 : maxD * 0.6 * (1 + 0.08 * up.lamp)) * (G.wx?.kind === 'fogbank' ? 1 - 0.3 * G.wx.inten : 1);
+  if (up.sweep && G.mode !== 'title') beam2.a += 0.55 * dt;
+  if (hornRing >= 0) { hornRing += dt; if (hornRing > 1.8) hornRing = -1; }
+  const k = Math.min(1, dt * 8);
+  beam.ha += (tHa - beam.ha) * k; beam.r += (tR - beam.r) * k;
+  beam.focused = foc;
+
+  if (G.shake > 0) G.shake -= dt;
+
+  if (G.mode === 'play' || G.mode === 'between') {
+    G.t += dt;
+    G.tide = tideAt(G.t);
+    if (!G.lesson) updateWeather(dt);
+
+    if (G.lesson) lessonUpdate(dt);
+    else if (G.mode === 'play') {
+      updateFlare(dt);
+      const p = nightParams(G.night);
+      G.spawnT -= dt;
+      if (G.spawnT <= 0 && G.ships.length < p.limit && G.ships.length + G.nightDocked < G.goal) {
+        spawnShip();
+        G.spawnT = p.interval * (0.7 + RS() * 0.6);
+      }
+    } else {
+      // the supply boat comes in a moment after dawn, once the night's banner has been read
+      if (!G.offered && G.between <= 3.6) { G.offered = true; if (openUpgrades()) return; }
+      G.between -= dt;
+      if (G.between <= 0) { G.mode = 'play'; startNight(G.night + 1); }
+    }
+
+    for (let i = G.ships.length - 1; i >= 0; i--) {
+      const sh = G.ships[i];
+      const r = updateShip(sh, dt);
+      if (r) {
+        G.ships.splice(i, 1);
+        if (r === 'wreck') wreck(sh); else dock(sh);
+        if (G.mode === 'over') break;
+      }
+    }
+  }
+
+  for (let i = G.parts.length - 1; i >= 0; i--) {
+    const p = G.parts[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.97; p.vy *= 0.97; p.rot += p.vr * dt; p.vr *= 0.97;
+    if ((p.life -= dt) <= 0) G.parts.splice(i, 1);
+  }
+  for (let i = G.floats.length - 1; i >= 0; i--) {
+    const f = G.floats[i];
+    f.y -= 14 * s * dt;
+    if ((f.life -= dt) <= 0) G.floats.splice(i, 1);
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawSea(t) {
+  const g = ctx.createRadialGradient(cx, cy, Ri, cx, cy, maxD);
+  g.addColorStop(0, '#15394a'); g.addColorStop(1, '#0b2029');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.strokeStyle = 'rgba(170, 210, 214, 0.07)';
+  ctx.lineWidth = 1;
+  const step = 22 * s;
+  for (let y = -step; y < H + step; y += step) {
+    ctx.beginPath();
+    for (let x = -20; x <= W + 20; x += 16) {
+      const yy = y + Math.sin(x * 0.017 / s + t * 0.7 + y * 0.05) * 3.2 * s;
+      x === -20 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+}
+
+function rockPath(k, x, y, r) {
+  ctx.beginPath();
+  const m = k.verts.length;
+  for (let i = 0; i < m; i++) {
+    const a = k.rot + i / m * TAU, rr = r * k.verts[i];
+    i ? ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+function drawRocks(t) {
+  for (const k of G.rocks) {
+    const [x, y] = rockPos(k);
+    if (rockUp(k)) {
+      const r = rockExposedR(k);
+      ctx.strokeStyle = 'rgba(230, 240, 236, 0.32)';
+      ctx.lineWidth = 2 * s;
+      ctx.beginPath(); ctx.arc(x, y, r * 1.18 + Math.sin(t * 2 + k.ph) * 1.5 * s, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = 'rgba(230, 240, 236, 0.12)';
+      ctx.beginPath(); ctx.arc(x, y, r * 1.45 + Math.sin(t * 1.4 + k.ph) * 2 * s, 0, TAU); ctx.stroke();
+      rockPath(k, x, y, r); ctx.fillStyle = '#2b302e'; ctx.fill();
+      rockPath(k, x - r * 0.14, y - r * 0.16, r * 0.72); ctx.fillStyle = '#4d534d'; ctx.fill();
+      rockPath(k, x - r * 0.24, y - r * 0.26, r * 0.36); ctx.fillStyle = '#6a6f66'; ctx.fill();
+    } else {
+      const depth = G.tide - k.h;
+      if (depth < 0.28) {
+        const a = (0.28 - depth) / 0.28;
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.22 * a})`;
+        ctx.beginPath(); ctx.arc(x, y, k.r * s * 0.75, 0, TAU); ctx.fill();
+        ctx.strokeStyle = `rgba(160, 204, 208, ${0.45 * a})`;
+        ctx.lineWidth = 1.2 * s;
+        for (let i = 0; i < 2; i++) {
+          const rr = k.r * s * (0.7 + i * 0.35) + Math.sin(t * 1.6 + k.ph + i) * 1.6 * s;
+          ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke();
+        }
+      }
+    }
+  }
+}
+
+function drawIsland() {
+  const sandR = Ri * (1 + (0.82 - G.tide) * 0.4);
+  ctx.fillStyle = 'rgba(220, 230, 225, 0.18)';
+  ctx.beginPath(); ctx.arc(cx, cy, sandR * 1.12, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#b39d76';
+  ctx.beginPath(); ctx.arc(cx, cy, sandR, 0, TAU); ctx.fill();
+  // pier
+  ctx.fillStyle = '#6b5640';
+  ctx.fillRect(cx - 4 * s, cy + Ri * 0.55, 8 * s, Ri * 0.8);
+  ctx.fillStyle = '#4d6a46';
+  ctx.beginPath(); ctx.ellipse(cx - Ri * 0.05, cy - Ri * 0.05, Ri * 0.78, Ri * 0.7, 0.4, 0, TAU); ctx.fill();
+  // keeper's cottage
+  ctx.fillStyle = '#d8d0bf';
+  ctx.fillRect(cx + Ri * 0.22, cy + Ri * 0.08, Ri * 0.34, Ri * 0.24);
+  ctx.fillStyle = '#7a3a2c';
+  ctx.fillRect(cx + Ri * 0.22, cy + Ri * 0.08, Ri * 0.34, Ri * 0.08);
+  // tower, seen from above
+  ctx.fillStyle = '#efe9db';
+  ctx.beginPath(); ctx.arc(cx, cy, Ri * 0.32, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#b5442f'; ctx.lineWidth = Ri * 0.08;
+  ctx.beginPath(); ctx.arc(cx, cy, Ri * 0.22, 0, TAU); ctx.stroke();
+}
+
+const HULLS = {
+  smack:   { hull: '#8a5f3c', edge: '#3b2819', sail: '#e9e2cf' },
+  steamer: { hull: '#3f474b', edge: '#1b2023', deck: '#7d7f77' },
+  dinghy:  { hull: '#a37a52', edge: '#4a3320' },
+  runner:  { hull: '#1c1f22', edge: '#0b0c0d', sail: '#4b5056' }
+};
+
+function hullPath(L, B, stern) {
+  ctx.beginPath();
+  ctx.moveTo(L / 2, 0);
+  ctx.bezierCurveTo(L * 0.2, -B / 2, -L * 0.4, -B / 2, -L / 2, -B * stern);
+  ctx.lineTo(-L / 2, B * stern);
+  ctx.bezierCurveTo(-L * 0.4, B / 2, L * 0.2, B / 2, L / 2, 0);
+}
+
+function drawShip(sh, t) {
+  const L = sh.len, B = L * (sh.type === 'steamer' ? 0.3 : sh.type === 'dinghy' ? 0.45 : 0.36);
+  const c = HULLS[sh.type];
+  ctx.save();
+  ctx.translate(sh.x, sh.y);
+  ctx.rotate(sh.hd + Math.sin(t * 1.3 + sh.ph) * 0.03);
+  ctx.strokeStyle = 'rgba(220, 235, 232, 0.22)'; ctx.lineWidth = 1.4 * s;
+  ctx.beginPath();
+  ctx.moveTo(-L * 0.45, -B * 0.3); ctx.lineTo(-L * 1.7, -B * 1.2);
+  ctx.moveTo(-L * 0.45, B * 0.3); ctx.lineTo(-L * 1.7, B * 1.2);
+  ctx.stroke();
+
+  if (sh.type === 'steamer') {
+    // smoke drifts back from the funnel
+    for (let i = 1; i <= 5; i++) {
+      ctx.fillStyle = `rgba(190, 196, 192, ${0.28 * (1 - i / 6)})`;
+      ctx.beginPath();
+      ctx.arc(-L * 0.05 - i * L * 0.3, Math.sin(t * 1.5 + i + sh.ph) * 2.5 * s, (3 + i * 1.8) * s, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  hullPath(L, B, sh.type === 'steamer' ? 0.42 : 0.36);
+  ctx.fillStyle = c.hull; ctx.fill();
+  ctx.strokeStyle = c.edge; ctx.lineWidth = 1.2 * s; ctx.stroke();
+
+  if (sh.type === 'steamer') {
+    ctx.fillStyle = c.deck;
+    ctx.fillRect(-L * 0.3, -B * 0.24, L * 0.5, B * 0.48);
+    ctx.fillStyle = '#b5442f';
+    ctx.beginPath(); ctx.arc(-L * 0.02, 0, B * 0.24, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#16191b';
+    ctx.beginPath(); ctx.arc(-L * 0.02, 0, B * 0.12, 0, TAU); ctx.fill();
+  } else if (sh.type === 'dinghy') {
+    const sw = Math.sin(t * 4 + sh.ph) * 0.35;
+    ctx.strokeStyle = '#d9cdb4'; ctx.lineWidth = 1.2 * s;
+    ctx.beginPath();
+    ctx.moveTo(0, -B * 0.35); ctx.lineTo(-L * 0.2 + Math.cos(sw) * 0, -B * 1.3 - sw * B);
+    ctx.moveTo(0, B * 0.35); ctx.lineTo(-L * 0.2, B * 1.3 + sw * B);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = c.sail;
+    ctx.fillRect(-L * 0.06, -B * 0.78, L * 0.12, B * 1.56);
+    ctx.fillRect(-L * 0.32, -B * 0.55, L * 0.08, B * 1.1);
+  }
+  ctx.restore();
+}
+
+function drawFog(t) {
+  const f = FOG_SCALE, fw = fogC.width, fh = fogC.height;
+  fctx.globalCompositeOperation = 'source-over';
+  fctx.clearRect(0, 0, fw, fh);
+  const wx = G.wx || { kind: 'calm', inten: 0, flash: 0 };
+  let fogA = 0.965;
+  if (wx.kind === 'moon') fogA -= 0.2 * wx.inten;
+  if (wx.kind === 'fogbank') fogA = Math.min(0.99, fogA + 0.03 * wx.inten);
+  if (wx.flash > 0) fogA *= 1 - Math.min(0.8, wx.flash * 2.6);
+  fctx.fillStyle = `rgba(22, 38, 46, ${fogA})`;
+  fctx.fillRect(0, 0, fw, fh);
+  for (const b of blobs) {
+    const x = (((b.x + t * b.v) % 1.3) - 0.15) * fw, y = b.y * fh, r = b.r * Math.max(fw, fh);
+    const g = fctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(120, 150, 156, 0.09)'); g.addColorStop(1, 'rgba(120, 150, 156, 0)');
+    fctx.fillStyle = g; fctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  fctx.globalCompositeOperation = 'destination-out';
+  const X = cx * f, Y = cy * f, R = beam.r * f;
+  for (const [m, al] of [[1.4, 0.35], [1.0, 0.55], [0.7, 1]]) {
+    const g = fctx.createRadialGradient(X, Y, 0, X, Y, R);
+    g.addColorStop(0, `rgba(0,0,0,${al})`); g.addColorStop(0.72, `rgba(0,0,0,${al * 0.85})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    fctx.fillStyle = g;
+    fctx.beginPath(); fctx.moveTo(X, Y); fctx.arc(X, Y, R, beam.a - beam.ha * m, beam.a + beam.ha * m); fctx.closePath(); fctx.fill();
+  }
+  if (G.up && G.up.sweep && G.mode !== 'title') {
+    const R2 = maxD * beam2.rk * f;
+    for (const [m, al] of [[1.4, 0.25], [1.0, 0.4], [0.7, 0.7]]) {
+      const g2 = fctx.createRadialGradient(X, Y, 0, X, Y, R2);
+      g2.addColorStop(0, `rgba(0,0,0,${al})`); g2.addColorStop(0.7, `rgba(0,0,0,${al * 0.8})`); g2.addColorStop(1, 'rgba(0,0,0,0)');
+      fctx.fillStyle = g2;
+      fctx.beginPath(); fctx.moveTo(X, Y); fctx.arc(X, Y, R2, beam2.a - beam2.ha * m, beam2.a + beam2.ha * m); fctx.closePath(); fctx.fill();
+    }
+  }
+  const hr = Ri * 2.6 * f;
+  const g = fctx.createRadialGradient(X, Y, 0, X, Y, hr);
+  g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.65, 'rgba(0,0,0,0.92)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  fctx.fillStyle = g; fctx.beginPath(); fctx.arc(X, Y, hr, 0, TAU); fctx.fill();
+  ctx.drawImage(fogC, 0, 0, W, H);
+}
+
+function drawLight(t) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, beam.r);
+  g.addColorStop(0, 'rgba(255, 207, 122, 0.20)'); g.addColorStop(1, 'rgba(255, 207, 122, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, beam.r, beam.a - beam.ha, beam.a + beam.ha); ctx.closePath(); ctx.fill();
+  if (G.up && G.up.sweep && G.mode !== 'title') {
+    const r2 = maxD * beam2.rk, g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, r2);
+    g2.addColorStop(0, 'rgba(207, 227, 224, 0.14)'); g2.addColorStop(1, 'rgba(207, 227, 224, 0)');
+    ctx.fillStyle = g2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r2, beam2.a - beam2.ha, beam2.a + beam2.ha); ctx.closePath(); ctx.fill();
+  }
+  const lg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Ri * 0.9);
+  lg.addColorStop(0, 'rgba(255, 236, 190, 0.9)'); lg.addColorStop(0.2, 'rgba(255, 207, 122, 0.45)'); lg.addColorStop(1, 'rgba(255, 207, 122, 0)');
+  ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(cx, cy, Ri * 0.9, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fff4d8';
+  ctx.beginPath(); ctx.arc(cx, cy, Ri * 0.09, 0, TAU); ctx.fill();
+
+  if (hornRing >= 0) {
+    const k = hornRing / 1.8;
+    ctx.strokeStyle = `rgba(207, 227, 224, ${0.45 * (1 - k)})`; ctx.lineWidth = 3 * s;
+    ctx.beginPath(); ctx.arc(cx, cy, Ri + k * maxD, 0, TAU); ctx.stroke();
+  }
+
+  // ship lanterns show through the fog
+  for (const sh of G.ships) {
+    const T = TYPES[sh.type];
+    // a smuggler only flashes its shuttered lantern briefly every few seconds
+    if (T.shutter && (t + sh.ph) % 4.5 > 0.4) continue;
+    const lx = sh.x + Math.cos(sh.hd) * sh.len * 0.1, ly = sh.y + Math.sin(sh.hd) * sh.len * 0.1;
+    const alarm = sh.warn && sh.mem <= 0 && !T.shutter;
+    const flick = alarm ? (Math.sin(t * 16 + sh.ph) > 0 ? 1 : 0.25) : 0.8 + Math.sin(t * 3 + sh.ph) * 0.12;
+    const col = alarm ? '226, 88, 62' : '255, 190, 110';
+    const r = 13 * s * T.lantern;
+    const lg2 = ctx.createRadialGradient(lx, ly, 0, lx, ly, r);
+    lg2.addColorStop(0, `rgba(${col}, ${0.95 * flick})`); lg2.addColorStop(0.25, `rgba(${col}, ${0.45 * flick})`); lg2.addColorStop(1, `rgba(${col}, 0)`);
+    ctx.fillStyle = lg2; ctx.beginPath(); ctx.arc(lx, ly, r, 0, TAU); ctx.fill();
+  }
+
+  for (const p of G.parts) {
+    const a = clamp(p.life / p.max, 0, 1);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.fillStyle = p.plank ? `rgba(150, 105, 66, ${a})` : `rgba(233, 226, 207, ${a})`;
+    ctx.fillRect(-p.w / 2, -p.w * 0.18, p.w, p.w * 0.36);
+    ctx.restore();
+  }
+
+  const fs = Math.round(15 * Math.max(0.85, s));
+  ctx.font = `600 ${fs}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+  ctx.textAlign = 'center';
+  for (const f of G.floats) {
+    const a = clamp(f.life / f.max * 1.6, 0, 1);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(10, 24, 32, 0.7)';
+    ctx.fillText(f.text, f.x + 1, f.y + 1);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+  drawWeather(t);
+}
+
+function drawWeather(t) {
+  const wx = G.wx;
+  if (!wx || wx.kind === 'calm') return;
+  if (wx.kind === 'squall' || wx.kind === 'storm') {
+    const [wxv] = windVec();
+    const n = Math.round((wx.kind === 'squall' ? 170 : 130) * wx.inten * Math.min(1.4, W * H / 700000));
+    const len = 16 * s, sx = wxv / (30 * s) * 0.7;
+    ctx.strokeStyle = 'rgba(196, 218, 224, 0.22)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const fx = (((i * 0.7548 + t * sx * 0.6) % 1) + 1) % 1, fy = (i * 0.5698 + t * (1.1 + (i % 5) * 0.08)) % 1;
+      const x = fx * (W + 40) - 20, y = fy * (H + 40) - 20;
+      ctx.moveTo(x, y); ctx.lineTo(x + sx * len, y + len);
+    }
+    ctx.stroke();
+  }
+  if (wx.kind === 'moon') {
+    ctx.fillStyle = `rgba(200, 220, 235, ${0.05 * wx.inten})`; ctx.fillRect(0, 0, W, H);
+  }
+  if (wx.flash > 0) {
+    ctx.fillStyle = `rgba(225, 235, 255, ${Math.min(0.35, wx.flash * 1.1)})`; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function draw(t) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#16262e'; ctx.fillRect(0, 0, W, H);
+  let ox = 0, oy = 0;
+  if (G.shake > 0) { const m = G.shake * 14 * s; ox = (Math.random() - 0.5) * m; oy = (Math.random() - 0.5) * m; }
+  ctx.setTransform(dpr, 0, 0, dpr, ox * dpr, oy * dpr);
+  drawSea(t);
+  drawRocks(t);
+  drawIsland();
+  for (const sh of G.ships) drawShip(sh, t);
+  drawFog(t);
+  drawLight(t);
+  drawFlare(t);
+  if (G.lesson) drawLessonMarks(t);
+}
+
+/* ---------- HUD ---------- */
+const hud = { night: '', docked: '', tide: '', fill: '', wrecks: -1, brg: '', wx: '' };
+function updateHud() {
+  if (G.mode === 'title') return;
+  const wxs = G.wx && G.wx.kind !== 'calm' ? WEATHER[G.wx.kind].name : 'Calm';
+  if (wxs !== hud.wx) $('hWeather').textContent = hud.wx = wxs;
+  const hb = $('hornBtn'), showHorn = G.up && G.up.horn > 0 && !paused && !choosing && !tipOpen && (G.mode === 'play' || G.mode === 'between');
+  if (hb.hidden === showHorn) hb.hidden = !showHorn;
+  if (showHorn) {
+    const hl = `Foghorn × ${G.hornLeft}`;
+    if (hb.textContent !== hl) { hb.textContent = hl; hb.disabled = G.hornLeft <= 0; }
+  }
+  const wl = G.up && G.up.boat ? `Wrecks · ${G.up.boat} lifeboat${G.up.boat === 1 ? '' : 's'}` : 'Wrecks';
+  if ($('hWrecksLabel').textContent !== wl) $('hWrecksLabel').textContent = wl;
+  const nl = G.lesson ? 'Guided night' : G.daily ? 'Daily · night' : 'Night';
+  if ($('hNightLabel').textContent !== nl) $('hNightLabel').textContent = nl;
+  const n = String(G.night);
+  if (n !== hud.night) $('hNight').textContent = hud.night = n;
+  const dk = `${Math.min(G.nightDocked, G.goal)} / ${G.goal}`;
+  if (dk !== hud.docked) $('hDocked').textContent = hud.docked = dk;
+  const rising = Math.cos(G.t * TAU / 46 + Math.PI / 2) > 0;
+  const td = `${(G.tide * 4.2).toFixed(1)} m ${rising ? '↑ rising' : '↓ falling'}`;
+  if (td !== hud.tide) $('hTide').textContent = hud.tide = td;
+  const fl = `${Math.round(G.tide * 100)}%`;
+  if (fl !== hud.fill) $('hTideFill').style.width = hud.fill = fl;
+  if (G.wrecks !== hud.wrecks) {
+    const pips = [...$('hWrecks').children];
+    if (hud.wrecks > G.wrecks) for (let i = G.wrecks; i < hud.wrecks; i++) {
+      const b = pips[i];
+      b.classList.remove('mended'); void b.offsetWidth; b.classList.add('mended');
+    }
+    hud.wrecks = G.wrecks;
+    pips.forEach((b, i) => b.classList.toggle('hit', i < G.wrecks));
+  }
+  let deg = Math.round(((beam.a + Math.PI / 2) * 180 / Math.PI) % 360);
+  if (deg < 0) deg += 360;
+  const brg = `${String(deg).padStart(3, '0')}°|${beam.focused ? 'FOCUSED' : 'WIDE'}`;
+  if (brg !== hud.brg) {
+    hud.brg = brg;
+    const [d, m] = brg.split('|');
+    $('hBearing').innerHTML = `BRG <b>${d}</b> · ${m}`;
+  }
+  $('focusBtn').classList.toggle('on', !!beam.focused);
+  const focusLabel = beam.held ? 'Widen beam' : 'Focus beam';
+  if ($('focusBtn').textContent !== focusLabel) { $('focusBtn').textContent = focusLabel; $('focusBtn').setAttribute('aria-pressed', String(beam.held)); }
+}
+
+let toastUntil = 0, bannerUntil = 0;
+function showToast(text) {
+  const t = $('toast');
+  t.textContent = text;
+  // sit just under the top bar, however many rows it wraps to
+  t.style.top = `${Math.round($('hud').getBoundingClientRect().bottom) + 8}px`;
+  t.classList.add('show');
+  toastUntil = clock + 4.2;
+}
+function showBanner(a, b, ms, c = '') {
+  $('b1').textContent = a; $('b2').textContent = b; $('b3').textContent = c;
+  $('banner').classList.add('show');
+  bannerUntil = clock + ms / 1000;
+}
+function expireNotices() {
+  if (toastUntil && clock >= toastUntil) { toastUntil = 0; $('toast').classList.remove('show'); }
+  if (bannerUntil && clock >= bannerUntil) { bannerUntil = 0; $('banner').classList.remove('show'); }
+}
+
+/* ---------- harbour board: shared leaderboards ---------- */
+// All time: one document per player at scores/<their id>, holding their best watch.
+// Today: one document per player at dailies/<their id>, holding their best on that day's voyage
+// (with its date, so yesterday's entries drop off the Today board by themselves).
+// Everyone who can open the page reads both; each player writes only their own entries, and only
+// the owner can tidy others. Rows come from other players, so every value is checked before use.
+const board = {
+  db: null, user: null, me: null, tab: 'all', readOnly: false, day: todayKey(),
+  all: { rows: [], state: 'loading', mine: null },
+  daily: { rows: [], state: 'loading', mine: null }
+};
+const cleanRow = d => {
+  const v = d.data() || {};
+  return { id: d.id, docked: Math.max(0, Math.floor(+v.docked) || 0), night: Math.max(1, Math.floor(+v.night) || 1) };
+};
+async function initBoard() {
+  if (!window.claude?.use) { board.all.state = board.daily.state = 'off'; renderBoard(); return; }
+  const [db, user] = await Promise.all([claude.use('db'), claude.use('user')]);
+  if (!current()) return;
+  board.db = db; board.user = user;
+  if (!db) { board.all.state = board.daily.state = 'off'; renderBoard(); return; }
+  board.me = user ? await user.id() : null;
+  if (user && (await user.can('data.write')) === false) board.readOnly = true;
+  const watch = (key, query) => {
+    const b = board[key];
+    const slow = setTimeout(() => { if (b.state === 'loading') { b.state = 'slow'; renderBoard(); } }, 10000);
+    const unsub = query.onSnapshot(snap => {
+      if (!current()) { unsub(); return; }
+      if (!snap.metadata.fromCache) clearTimeout(slow);
+      b.rows = snap.docs.map(cleanRow).sort((x, y) => y.docked - x.docked || y.night - x.night).slice(0, 10);
+      b.state = 'ready';
+      renderBoard();
+    }, () => { clearTimeout(slow); b.state = 'error'; renderBoard(); });
+  };
+  watch('all', db.collection('scores').orderBy('docked', 'desc').limit(25));
+  watch('daily', db.collection('dailies').where('day', '==', board.day).orderBy('docked', 'desc').limit(25));
+  if (board.me) {
+    try { const s = await db.doc('scores/' + board.me).get(); board.all.mine = s.exists ? s.data() : null; } catch (e) {}
+    try { const s = await db.doc('dailies/' + board.me).get(); board.daily.mine = s.exists ? s.data() : null; } catch (e) {}
+  }
+}
+
+// Writes the entry only when it beats this player's own best. Returns 'saved', 'notbest', 'skip' or 'failed'.
+async function postScore(key, body) {
+  if (!board.db || !board.me || board.readOnly || body.docked < 1) return 'skip';
+  const prev = board[key].mine;
+  const sameRace = prev && (key === 'all' || prev.day === body.day);
+  if (sameRace && (+prev.docked > body.docked || (+prev.docked === body.docked && +prev.night >= body.night))) return 'notbest';
+  try {
+    await board.db.doc((key === 'all' ? 'scores/' : 'dailies/') + board.me).set(body);
+    board[key].mine = body;
+    return 'saved';
+  } catch (e) {
+    if (e && (e.code === 'invalid_argument' || e.code === 'not_granted')) board.readOnly = true;
+    return 'failed';
+  }
+}
+
+async function postResults(docked, night, commend, day) {
+  const at = new Date().toISOString();
+  const all = await postScore('all', { docked, night, commend, at });
+  const daily = day ? await postScore('daily', { day, docked, night, commend, at }) : 'skip';
+  if (all === 'failed' || daily === 'failed') return 'Your score could not be added to the harbour board.';
+  if (all === 'saved' && daily === 'saved') return 'Your watch is on today\'s board and the all-time board.';
+  if (daily === 'saved') return 'Your watch is on today\'s board.';
+  if (all === 'saved') return 'Your best watch is on the all-time board.';
+  return '';
+}
+
+async function renderBoard() {
+  const b = board[board.tab];
+  const names = board.user && b.rows.length ? await board.user.profiles(b.rows.map(r => r.id)) : {};
+  for (const tab of document.querySelectorAll('.board .tab')) tab.setAttribute('aria-pressed', String(tab.dataset.tab === board.tab));
+  for (const el of document.querySelectorAll('.boardBody')) {
+    el.textContent = '';
+    const note = text => { const p = document.createElement('p'); p.className = 'note'; p.textContent = text; el.appendChild(p); };
+    if (b.state === 'off') { note('The shared harbour board needs you to be signed in to Claude. Your best watch is still saved on this device.'); continue; }
+    if (b.state === 'loading') { note('Reading the harbour board…'); continue; }
+    if (b.state === 'slow') { note('The harbour board can’t be reached yet. It will appear when the connection comes back.'); continue; }
+    if (b.state === 'error') { note('The harbour board couldn’t load. Your best watch is still saved on this device.'); continue; }
+    if (!b.rows.length) note(board.tab === 'daily'
+      ? `No one has sailed the ${dayLabel(board.day)} voyage yet. Be the first.`
+      : 'No watches logged yet. Finish a game to put your name on the board.');
+    else {
+      const ol = document.createElement('ol');
+      b.rows.forEach((r, i) => {
+        const li = document.createElement('li');
+        if (r.id === board.me) li.className = 'me';
+        const cell = (cls, t) => { const s = document.createElement('span'); s.className = cls; s.textContent = t; li.appendChild(s); };
+        const who = (names[r.id] && names[r.id].name) || 'A keeper';
+        cell('rank', String(i + 1));
+        cell('who', r.id === board.me ? `${who} (you)` : who);
+        cell('ships', `${r.docked} ${r.docked === 1 ? 'ship' : 'ships'}`);
+        cell('nights', `night ${r.night}`);
+        ol.appendChild(li);
+      });
+      el.appendChild(ol);
+    }
+    if (board.readOnly) note('You can read the board, but your account can’t add scores to it.');
+  }
+}
+document.addEventListener('click', e => {
+  const tab = e.target.closest && e.target.closest('.board .tab');
+  if (!tab || !current()) return;
+  board.tab = tab.dataset.tab;
+  renderBoard();
+});
+
+/* ---------- storage ---------- */
+function loadBest() {
+  try { return JSON.parse(localStorage.getItem('tidekeeper-best')) || { docked: 0, night: 0 }; }
+  catch (e) { return { docked: 0, night: 0 }; }
+}
+function loadDaily() {
+  try { return JSON.parse(localStorage.getItem('tidekeeper-daily')) || { day: '', docked: 0, night: 0 }; }
+  catch (e) { return { day: '', docked: 0, night: 0 }; }
+}
+function saveDaily(v) { try { localStorage.setItem('tidekeeper-daily', JSON.stringify(v)); } catch (e) {} }
+function showDailyLine() {
+  const d = loadDaily(), today = todayKey();
+  $('dailyLine').textContent = `Daily voyage for ${dayLabel(today)}: the same rocks, ships and weather for everyone. A new one starts at midnight UTC.`
+    + (d.day === today && d.docked ? ` Your best today: ${d.docked} ships, night ${d.night}.` : '');
+}
+function saveBest(v) { try { localStorage.setItem('tidekeeper-best', JSON.stringify(v)); } catch (e) {} }
+
+/* ---------- sound ---------- */
+// Two separate volumes: Sound is the effects (bells, crashes, thunder), Music is the background
+// music. Each switch silences only its own sounds, at once, even ones already playing.
+let AC = null, master = null, fx = null, muted = false;
+function ensureAudio() {
+  try {
+    if (!AC) {
+      // the iPhone audio type has to be chosen before the audio starts, or iOS can silence it
+      setAudioSession();
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      window.__tidekeeperAudio = AC;
+      master = AC.createGain();
+      master.connect(AC.destination);
+      fx = AC.createGain();
+      fx.gain.value = muted ? 0 : 1;
+      fx.connect(master);
+      startAmbience();
+    }
+    playThroughSilentSwitch();
+    if (AC.state !== 'running') AC.resume().catch(() => {});
+  } catch (e) { AC = null; master = null; fx = null; }
+}
+// On iPhones, web audio counts as "ambient" sound by default, so the ring/silent switch mutes it
+// completely. Games should play like a video does, so ask for playback audio. Newer iOS has a
+// setting for this; older iOS gets the same effect from a looping silent audio clip started on a tap.
+let silentClip = null;
+function setAudioSession() {
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
+}
+function playThroughSilentSwitch() {
+  try {
+    if (navigator.audioSession) return;
+    if (!/iP(hone|ad|od)|Macintosh/.test(navigator.userAgent) || !('ontouchend' in document)) return;
+    if (!silentClip) {
+      // 0.25 s of 8 kHz, 8-bit mono silence as a WAV file
+      const n = 2000, b = new Uint8Array(44 + n), v = new DataView(b.buffer);
+      const str = (o, t) => [...t].forEach((c, i) => b[o + i] = c.charCodeAt(0));
+      str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+      v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+      v.setUint16(32, 1, true); v.setUint16(34, 8, true); str(36, 'data'); v.setUint32(40, n, true); b.fill(128, 44);
+      silentClip = new Audio(URL.createObjectURL(new Blob([b], { type: 'audio/wav' })));
+      silentClip.loop = true; silentClip.setAttribute('playsinline', '');
+      window.__tidekeeperClip = silentClip;
+    }
+    if (silentClip.paused) silentClip.play().catch(() => {});
+  } catch (e) {}
+}
+// Phones suspend or interrupt audio when the screen locks, a call comes in or you switch apps, and
+// it can only be started again from a tap. So every tap or key press wakes the sound back up.
+function wakeAudio() {
+  if (!current() || !AC) return;
+  playThroughSilentSwitch();
+  if (AC.state !== 'running') AC.resume().catch(() => {});
+  // an iPhone can leave a context stuck after an interruption; a fresh one starts cleanly
+  else if (AC.state === 'running' && AC.currentTime === 0) setTimeout(() => { if (AC && AC.currentTime === 0) rebuildAudio(); }, 400);
+}
+// Close the audio and build it again from scratch, keeping the music if it was playing.
+function rebuildAudio() {
+  const hadMusic = !!mus;
+  try { stopMusic(true); AC.close(); } catch (e) {}
+  AC = null; master = null; fx = null; amb = null;
+  ensureAudio();
+  if (hadMusic || playing()) startMusic();
+}
+for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, wakeAudio, { capture: true, passive: true });
+// Wind and rain for squalls and thunderstorms: one looping noise, filtered two ways.
+// Wind is a low, gusting band; rain is a soft high hiss. Both go through the Sound switch.
+let amb = null;
+function startAmbience() {
+  if (!AC || amb) return;
+  const len = AC.sampleRate * 2, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = AC.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const windF = AC.createBiquadFilter(), windG = AC.createGain();
+  windF.type = 'bandpass'; windF.frequency.value = 450; windF.Q.value = 0.9; windG.gain.value = 0;
+  const rainF = AC.createBiquadFilter(), rainG = AC.createGain();
+  rainF.type = 'highpass'; rainF.frequency.value = 2800; rainG.gain.value = 0;
+  src.connect(windF).connect(windG).connect(fx);
+  src.connect(rainF).connect(rainG).connect(fx);
+  src.start();
+  amb = { windF, windG, rainG, gust: 1, nextGust: 0 };
+}
+function updateAmbience() {
+  if (!amb) return;
+  const live = G.mode === 'play' || G.mode === 'between';
+  const kind = live && G.wx ? G.wx.kind : 'calm', I = live && G.wx ? G.wx.inten : 0;
+  const duck = paused ? 0.3 : 1, now = AC.currentTime;
+  if (now >= amb.nextGust) {
+    amb.gust = 0.55 + Math.random() * 0.7;
+    amb.nextGust = now + 0.6 + Math.random() * 1.4;
+    amb.windF.frequency.setTargetAtTime(300 + amb.gust * 350, now, 0.6);
+  }
+  const wind = kind === 'squall' ? 1 : kind === 'storm' ? 0.7 : 0;
+  const rain = kind === 'squall' ? 0.8 : kind === 'storm' ? 1 : 0;
+  amb.windG.gain.setTargetAtTime(0.22 * wind * I * amb.gust * duck, now, 0.4);
+  amb.rainG.gain.setTargetAtTime(0.05 * rain * I * duck, now, 0.5);
+}
+
+function bell() {
+  if (!AC || muted) return;
+  const t = AC.currentTime;
+  for (const [f, g] of [[880, 0.16], [1320, 0.06], [2210, 0.025]]) {
+    const o = AC.createOscillator(), v = AC.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(g, t + 0.01);
+    v.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    o.connect(v).connect(fx); o.start(t); o.stop(t + 1.7);
+  }
+}
+function hornSound() {
+  if (!AC || muted) return;
+  const t = AC.currentTime, lp = AC.createBiquadFilter(), v = AC.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 500;
+  v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(0.28, t + 0.25);
+  v.gain.setValueAtTime(0.28, t + 1.4); v.gain.exponentialRampToValueAtTime(0.0001, t + 2.3);
+  lp.connect(v).connect(fx);
+  for (const f of [98, 73.4]) {
+    const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+    o.connect(lp); o.start(t); o.stop(t + 2.4);
+  }
+}
+
+// a flare going up: a quick rising hiss and a soft pop
+function flareSound() {
+  if (!AC || muted) return;
+  const t = AC.currentTime, o = AC.createOscillator(), v = AC.createGain(), bp = AC.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(260, t); o.frequency.exponentialRampToValueAtTime(1500, t + 0.6);
+  bp.type = 'bandpass'; bp.frequency.setValueAtTime(700, t); bp.frequency.exponentialRampToValueAtTime(2600, t + 0.6); bp.Q.value = 2;
+  v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(0.07, t + 0.1); v.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+  o.connect(bp).connect(v).connect(fx); o.start(t); o.stop(t + 0.8);
+  const p = AC.createOscillator(), pv = AC.createGain();
+  p.type = 'sine'; p.frequency.setValueAtTime(900, t + 0.62); p.frequency.exponentialRampToValueAtTime(300, t + 0.8);
+  pv.gain.setValueAtTime(0, t + 0.62); pv.gain.linearRampToValueAtTime(0.12, t + 0.63); pv.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+  p.connect(pv).connect(fx); p.start(t + 0.62); p.stop(t + 0.9);
+}
+
+function thunder() {
+  if (!AC || muted) return;
+  const t = AC.currentTime + 0.4 + Math.random() * 0.6, len = Math.floor(AC.sampleRate * 2.2);
+  const buf = AC.createBuffer(1, len, AC.sampleRate), data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+  const v = AC.createGain(); v.gain.value = 0.55;
+  src.connect(lp).connect(v).connect(fx); src.start(t);
+}
+
+function crashSound() {
+  if (!AC || muted) return;
+  const t = AC.currentTime, len = Math.floor(AC.sampleRate * 0.7);
+  const buf = AC.createBuffer(1, len, AC.sampleRate), data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+  const v = AC.createGain(); v.gain.value = 0.5;
+  src.connect(lp).connect(v).connect(fx); src.start(t);
+  const o = AC.createOscillator(), og = AC.createGain();
+  o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+  og.gain.setValueAtTime(0.35, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  o.connect(og).connect(fx); o.start(t); o.stop(t + 0.65);
+}
+
+/* ---------- music ---------- */
+// Played live with Web Audio, so there are no files to load: a low drone under a slow melody in
+// D minor over a i-VII-VI-VII progression (Dm, C, Bb, C). Tension rises with later nights, wrecks,
+// low water, rough weather and ships about to hit a rock; the drone opens up, the melody gets busier,
+// and a drum and a high arpeggio join in.
+let musicOn = true, mus = null;
+try { musicOn = localStorage.getItem('tidekeeper-music') !== '0'; } catch (e) {}
+const MUSIC_VOL = 0.55, STEP = 60 / 66 / 2; // eighth notes at 66 beats a minute
+const PROG = [
+  { root: 50, tones: [2, 5, 9] },   // D minor
+  { root: 48, tones: [0, 4, 7] },   // C
+  { root: 46, tones: [10, 2, 5] },  // B flat
+  { root: 48, tones: [0, 4, 7] }    // C
+];
+const MEL = [];
+for (let m = 62; m <= 76; m++) if ([0, 2, 3, 5, 7, 8, 10].includes((m - 62) % 12)) MEL.push(m); // D minor, D4 to E5
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+
+function musicTension() {
+  if (G.mode !== 'play' && G.mode !== 'between') return 0;
+  let t = Math.min(1, (G.night - 1) / 8) * 0.45 + G.wrecks / 3 * 0.15 + clamp((0.6 - G.tide) / 0.3, 0, 1) * 0.15;
+  const k = G.wx && G.wx.kind;
+  if (k === 'squall' || k === 'storm' || k === 'fogbank') t += 0.15 * G.wx.inten;
+  if (k === 'moon') t -= 0.1 * G.wx.inten;
+  if (G.ships.some(sh => sh.warn && sh.mem <= 0)) t += 0.15;
+  return clamp(t, 0, 1);
+}
+
+function startMusic() {
+  if (!AC) return;
+  stopMusic(true);
+  const out = AC.createGain();
+  out.gain.value = 0;
+  out.connect(master);
+  // a soft echo gives the melody some space
+  const delay = AC.createDelay(1), fb = AC.createGain(), dlp = AC.createBiquadFilter();
+  delay.delayTime.value = 0.45; fb.gain.value = 0.38; dlp.type = 'lowpass'; dlp.frequency.value = 1800;
+  delay.connect(dlp).connect(fb).connect(delay); dlp.connect(out);
+  const padF = AC.createBiquadFilter();
+  padF.type = 'lowpass'; padF.frequency.value = 500; padF.Q.value = 0.7; padF.connect(out);
+  const pad = [['triangle', 0, 0.05], ['sine', 7, 0.035], ['sine', -12, 0.06]].map(([type, iv, g]) => {
+    const o = AC.createOscillator(), v = AC.createGain();
+    o.type = type; o.frequency.value = hz(50 + iv); v.gain.value = g;
+    o.connect(v).connect(padF); o.start();
+    return { o, iv };
+  });
+  const lfo = AC.createOscillator(), lfoG = AC.createGain();
+  lfo.frequency.value = 0.07; lfoG.gain.value = 150;
+  lfo.connect(lfoG).connect(padF.frequency); lfo.start();
+  mus = { out, delay, padF, pad, lfo, step: 0, next: AC.currentTime + 0.3, mel: MEL.indexOf(69), tension: 0, timer: 0 };
+  setMusicLevel(1.5);
+  mus.timer = setInterval(scheduleMusic, 80);
+}
+
+function stopMusic(quick) {
+  if (!mus) return;
+  const m = mus;
+  mus = null;
+  clearInterval(m.timer);
+  const t = AC.currentTime;
+  m.out.gain.cancelScheduledValues(t);
+  m.out.gain.setTargetAtTime(0, t, quick ? 0.05 : 1.2);
+  setTimeout(() => {
+    try { for (const p of m.pad) p.o.stop(); m.lfo.stop(); } catch (e) {}
+    m.out.disconnect();
+  }, quick ? 300 : 6000);
+}
+
+function setMusicLevel(ease = 0.4) {
+  if (!mus) return;
+  const v = musicOn ? (paused ? MUSIC_VOL * 0.3 : MUSIC_VOL) : 0;
+  mus.out.gain.setTargetAtTime(v, AC.currentTime, ease);
+}
+
+function scheduleMusic() {
+  if (!mus) return;
+  if (!current()) { clearInterval(mus.timer); return; }
+  // after the page was throttled, skip ahead instead of playing a pile of late notes at once
+  if (mus.next < AC.currentTime - 0.25) mus.next = AC.currentTime + 0.05;
+  mus.tension += (musicTension() - mus.tension) * 0.05;
+  const T = paused ? mus.tension * 0.3 : mus.tension;
+  mus.padF.frequency.setTargetAtTime(420 + T * 1500, AC.currentTime, 2);
+  while (mus.next < AC.currentTime + 0.35) {
+    playStep(mus.step, mus.next, T);
+    mus.step++;
+    mus.next += STEP;
+  }
+}
+
+function playStep(step, t, T) {
+  const chord = PROG[Math.floor(step / 16) % PROG.length];
+  if (step % 16 === 0) for (const p of mus.pad) p.o.frequency.setTargetAtTime(hz(chord.root + p.iv), t, 0.4);
+
+  // melody: a wandering line on quarter notes that lands on a chord note at the start of each bar
+  if (step % 2 === 0 && Math.random() < 0.3 + 0.4 * T) {
+    let i = clamp(mus.mel + [-2, -1, -1, 0, 1, 1, 2][Math.random() * 7 | 0], 0, MEL.length - 1);
+    if (step % 8 === 0) {
+      let best = i, bd = 99;
+      MEL.forEach((m, j) => { if (chord.tones.includes(m % 12) && Math.abs(j - i) < bd) { bd = Math.abs(j - i); best = j; } });
+      i = best;
+    }
+    mus.mel = i;
+    voice(hz(MEL[i]), t, step % 8 === 0 ? 2.2 : 1.4, 0.09);
+  }
+
+  if (T > 0.35 && (step % 4 === 0 || (T > 0.65 && step % 2 === 0))) drum(t, 0.16 + 0.12 * T);
+
+  if (T > 0.6) {
+    const notes = chord.tones.map(pc => 74 + ((pc - 2 + 12) % 12)).sort((a, b) => a - b);
+    voice(hz(notes[step % notes.length]), t, 0.45, 0.03 * (T - 0.6) / 0.4 + 0.008, 0.7);
+  }
+}
+
+function voice(f, t, dur, g, send = 0.5) {
+  if (!mus) return;
+  const o = AC.createOscillator(), o2 = AC.createOscillator(), v = AC.createGain(), v2 = AC.createGain(), sg = AC.createGain();
+  o.type = 'triangle'; o.frequency.value = f;
+  o2.type = 'sine'; o2.frequency.value = f * 2; v2.gain.value = 0.25;
+  v.gain.setValueAtTime(0, t);
+  v.gain.linearRampToValueAtTime(g, t + 0.05);
+  v.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(v); o2.connect(v2).connect(v);
+  v.connect(mus.out);
+  sg.gain.value = send; v.connect(sg).connect(mus.delay);
+  o.start(t); o2.start(t); o.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+}
+
+function drum(t, g) {
+  const o = AC.createOscillator(), v = AC.createGain();
+  o.frequency.setValueAtTime(75, t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.3);
+  v.gain.setValueAtTime(g, t);
+  v.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(v).connect(mus.out);
+  o.start(t); o.stop(t + 0.45);
+}
+
+function musicMotif(notes, gap, dur) {
+  if (!mus) return;
+  const t = AC.currentTime + 0.1;
+  notes.forEach((m, i) => voice(hz(m), t + i * gap, dur, 0.1, 0.6));
+}
+
+/* ---------- input ---------- */
+function aimAt(e) {
+  const r = cv.getBoundingClientRect();
+  beam.target = Math.atan2(e.clientY - r.top - cy, e.clientX - r.left - cx);
+}
+// Mouse points the beam straight at the cursor. On touch, a finger would hide what it points at,
+// so dragging anywhere turns the beam (left/right), a quick tap points it, and a second finger focuses it.
+const touches = new Map();
+const playing = () => G.mode === 'play' || G.mode === 'between';
+cv.addEventListener('pointerdown', e => {
+  if (!playing() || tipOpen) return;
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  if (e.pointerType === 'mouse') {
+    aimAt(e);
+    if (e.button === 0) pointerFocus = true;
+    return;
+  }
+  touches.set(e.pointerId, { x0: e.clientX, y0: e.clientY, x: e.clientX, t0: performance.now(), moved: false });
+  pointerFocus = touches.size >= 2;
+});
+cv.addEventListener('pointermove', e => {
+  if (!playing() || tipOpen) return;
+  if (e.pointerType === 'mouse') { aimAt(e); return; }
+  const tp = touches.get(e.pointerId);
+  if (!tp) return;
+  if (Math.hypot(e.clientX - tp.x0, e.clientY - tp.y0) > 10) tp.moved = true;
+  // only the first finger steers; a full-width swipe turns the beam about 200 degrees
+  if (tp === touches.values().next().value) beam.target += (e.clientX - tp.x) / Math.max(W, 1) * Math.PI * 1.1;
+  tp.x = e.clientX;
+});
+function endPointer(e) {
+  if (e.pointerType === 'mouse') { pointerFocus = false; return; }
+  const tp = touches.get(e.pointerId);
+  touches.delete(e.pointerId);
+  if (tp && e.type === 'pointerup' && !tp.moved && performance.now() - tp.t0 < 300 && touches.size === 0 && playing()) aimAt(e);
+  pointerFocus = touches.size >= 2;
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+const fb = $('focusBtn');
+// one tap switches between the wide and the focused beam, so nobody has to keep a thumb on it
+function toggleFocus() { beam.held = !beam.held; }
+fb.addEventListener('click', toggleFocus);
+fb.addEventListener('contextmenu', e => e.preventDefault());
+
+addEventListener('keydown', e => {
+  if (!current()) return;
+  const k = e.key;
+  if (choosing) {
+    if (k === '1' || k === '2' || k === '3') { chooseUpgrade(+k - 1); e.preventDefault(); }
+    return;
+  }
+  if (tipOpen) {
+    if (k === 'Enter' || k === ' ' || k === 'Escape') { closeTip(); e.preventDefault(); }
+    return;
+  }
+  if ((k === 'h' || k === 'H') && !e.repeat) { soundHorn(); return; }
+  if (helpFrom) {
+    if (k === 'Escape' || k === 'p' || k === 'P') { closeHelp(); e.preventDefault(); }
+    return;
+  }
+  if (k === 'p' || k === 'P' || k === 'Escape') {
+    if (G.mode === 'play' || G.mode === 'between') { setPaused(!paused); e.preventDefault(); }
+    return;
+  }
+  if (paused) return;
+  if (k === 'ArrowLeft' || k === 'a' || k === 'A') keys.left = true;
+  else if (k === 'ArrowRight' || k === 'd' || k === 'D') keys.right = true;
+  else if (k === 'f' || k === 'F') {
+    if (playing() && !e.repeat) { toggleFocus(); e.preventDefault(); }
+    return;
+  }
+  else if (k === ' ') {
+    if (G.mode === 'play' || G.mode === 'between') { keys.space = true; e.preventDefault(); }
+  } else return;
+  if (k.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => {
+  if (!current()) return;
+  const k = e.key;
+  if (k === 'ArrowLeft' || k === 'a' || k === 'A') keys.left = false;
+  else if (k === 'ArrowRight' || k === 'd' || k === 'D') keys.right = false;
+  else if (k === ' ') keys.space = false;
+});
+document.addEventListener('visibilitychange', () => { if (current() && document.hidden) setPaused(true); });
+addEventListener('blur', () => { if (current()) setPaused(true); });
+addEventListener('blur', () => { keys.left = keys.right = keys.space = false; pointerFocus = false; touches.clear(); });
+
+$('startBtn').addEventListener('click', () => play(false));
+$('dailyBtn').addEventListener('click', () => play(true));
+$('switchBtn').addEventListener('click', () => newGame(!G.daily));
+$('helpBtn').addEventListener('click', () => openHelp('titleScreen'));
+$('coachNext').addEventListener('click', () => {
+  if (tipOpen) { closeTip(); return; }
+  if (lesson.step === LESSON.length - 1) finishLesson(); else lessonGo(lesson.step + 1);
+});
+$('coachSkip').addEventListener('click', finishLesson);
+$('pauseHelpBtn').addEventListener('click', () => openHelp('pauseScreen'));
+$('helpBack').addEventListener('click', closeHelp);
+$('guideBtn').addEventListener('click', () => {
+  $('helpScreen').hidden = true; helpFrom = null;
+  startLesson(false);
+});
+$('pauseBtn').addEventListener('click', () => setPaused(!paused));
+$('resumeBtn').addEventListener('click', () => setPaused(false));
+// Leaving a run early (Start over or Main menu) asks for a second tap, since the run is lost.
+// The guided night has nothing to lose, so its buttons work on the first tap.
+let quitArmed = 0, armedBtn = null;
+const QUIT_LABELS = { quitBtn: 'Start over', menuBtn: 'Main menu' };
+function disarmQuit() {
+  clearTimeout(quitArmed); quitArmed = 0; armedBtn = null;
+  for (const id in QUIT_LABELS) { $(id).textContent = QUIT_LABELS[id]; $(id).classList.remove('armed'); }
+}
+function confirmLeave(id, go) {
+  if (G.lesson || armedBtn === id) { disarmQuit(); go(); return; }
+  disarmQuit();
+  armedBtn = id;
+  $(id).textContent = 'Tap again to lose this run'; $(id).classList.add('armed');
+  quitArmed = setTimeout(disarmQuit, 3500);
+}
+$('quitBtn').addEventListener('click', () => confirmLeave('quitBtn', () => newGame()));
+$('menuBtn').addEventListener('click', () => confirmLeave('menuBtn', goTitle));
+$('overMenuBtn').addEventListener('click', goTitle);
+
+// Back to the title screen: the run ends where it is (nothing is posted for a run left early),
+// and the sea goes back to the quiet turning beam behind the menu.
+function goTitle() {
+  endLesson(); closeTip(false);
+  setPaused(false);
+  choosing = false; $('upgradeScreen').hidden = true;
+  if (helpFrom) { $('helpScreen').hidden = true; helpFrom = null; }
+  G.mode = 'title'; G.daily = false; G.day = null;
+  seedVoyage(null);
+  stopMusic(false);
+  beam.held = false; hornRing = -1;
+  G.ships = []; G.parts = []; G.floats = []; G.rocks = []; G.flare = null;
+  G.shake = 0; G.up = newUpgrades(); G.wx = newWeather();
+  addRocks(9);
+  toastUntil = bannerUntil = 0; $('toast').classList.remove('show'); $('banner').classList.remove('show');
+  for (const id of ['hud', 'hBearing', 'focusBtn', 'hornBtn', 'overScreen', 'pauseScreen']) $(id).hidden = true;
+  const best = loadBest();
+  $('bestLine').textContent = best.docked ? `Best watch: ${best.docked} ships, night ${best.night}.` : '';
+  showDailyLine();
+  board.tab = 'all';
+  renderBoard();
+  $('titleScreen').hidden = false;
+  $('titleScreen').scrollTop = 0;
+  setTimeout(() => $('startBtn').focus(), 30);
+}
+$('restartBtn').addEventListener('click', () => newGame(G.daily));
+$('shareBtn').addEventListener('click', shareResult);
+$('hornBtn').addEventListener('click', soundHorn);
+function showAudioButtons() {
+  const set = (id, name, on, note) => {
+    const b = $(id);
+    b.textContent = `${name}: ${on ? 'on' : 'off'}`;
+    b.classList.toggle('off', !on);
+    b.setAttribute('aria-pressed', String(on));
+    b.title = note;
+  };
+  set('mute', 'Sound', !muted, muted ? 'Sound effects are off. Tap to turn them back on.' : 'Tap to turn off sound effects: bells, crashes, thunder, wind and rain. Music keeps playing.');
+  set('musicBtn', 'Music', musicOn, musicOn ? 'Tap to turn off the background music. Sound effects keep playing.' : 'Music is off. Tap to turn it back on.');
+}
+$('mute').addEventListener('click', () => {
+  muted = !muted;
+  try { localStorage.setItem('tidekeeper-muted', muted ? '1' : '0'); } catch (e) {}
+  if (!muted) ensureAudio();
+  if (fx) fx.gain.setTargetAtTime(muted ? 0 : 1, AC.currentTime, 0.03);
+  showAudioButtons();
+});
+$('musicBtn').addEventListener('click', () => {
+  musicOn = !musicOn;
+  try { localStorage.setItem('tidekeeper-music', musicOn ? '1' : '0'); } catch (e) {}
+  if (musicOn && !mus && playing()) { ensureAudio(); startMusic(); } else setMusicLevel(0.08);
+  showAudioButtons();
+});
+try { muted = localStorage.getItem('tidekeeper-muted') === '1'; } catch (e) {}
+showAudioButtons();
+
+addEventListener('resize', () => { if (current()) resize(); });
+addEventListener('pagehide', () => { try { AC?.suspend(); silentClip?.pause(); } catch (e) {} });
+document.addEventListener('visibilitychange', () => { if (current() && !document.hidden) wakeAudio(); });
+
+/* ---------- boot ---------- */
+resize();
+G.wx = newWeather();
+addRocks(9);
+renderBoard();
+initBoard();
+showDailyLine();
+const best = loadBest();
+if (best.docked) $('bestLine').textContent = `Best watch: ${best.docked} ships, night ${best.night}.`;
+
+let last = performance.now(), ambAt = 0;
+function frame(now) {
+  if (!current()) return; // a newer version of the game has taken over this page
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!paused && !choosing && !tipOpen) { clock += dt; update(dt); expireNotices(); }
+  draw(clock);
+  updateHud();
+  if (now - ambAt > 100) { ambAt = now; updateAmbience(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
